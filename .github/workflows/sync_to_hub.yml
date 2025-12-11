@@ -2,7 +2,8 @@ name: Sync to Hugging Face Hub
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   sync-to-hub:
@@ -12,7 +13,13 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+      
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://arqdariogomez:${HF_TOKEN}@huggingface.co/spaces/arqdariogomez/DiffLocks-Studio --force main
+        run: |
+          git config --global user.email "bot@github.com"
+          git config --global user.name "GitHub Actions"
+          # LA SOLUCIÓN AL ERROR LFS:
+          git config lfs.allowincompletepush true
+          git push --force https://arqdariogomez:${HF_TOKEN}@huggingface.co/spaces/arqdariogomez/DiffLocks-Studio main
