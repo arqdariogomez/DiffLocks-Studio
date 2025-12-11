@@ -28,7 +28,6 @@ jsonmerge==1.9.2
 mathutils==3.3.0
 matplotlib==3.7.2
 mediapipe==0.10.21
-opencv_python==4.12.0.88
 plotly==5.24.1
 spaces==0.44.0
 torchdiffeq==0.2.5
