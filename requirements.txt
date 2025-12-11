@@ -1,36 +1,45 @@
-# === PYTORCH (CUDA 12.1) ===
+# === CORE (PYTORCH) ===
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.4.0
 torchvision==0.19.0
 
-# === NATTEN (FIX SSL ERROR) ===
+# === NATTEN (SSL FIX) ===
 --find-links https://shi-labs.com/natten/wheels/
 --trusted-host shi-labs.com
 natten==0.17.1+torch240cu121
 
-# === CORE & UI ===
-numpy<2.0.0
+# === WEB UI ===
 gradio==3.50.2
+huggingface_hub
+
+# === MATH & SCIENCE (Aquí es donde fallaba) ===
+numpy<2.0.0
+scipy
+pandas
 matplotlib
 plotly
+
+# === IMAGEN & 3D ===
 Pillow
 mediapipe
 opencv-python-headless
-scipy
 trimesh
-huggingface_hub
 
-# === K-DIFFUSION & MATH CORE (LO QUE FALTABA) ===
-dctorch
+# === K-DIFFUSION FULL STACK (TODAS LAS DEPENDENCIAS POSIBLES) ===
+# El error actual era torchsde. Agregamos el resto por seguridad.
+torchsde
 torchdiffeq
-jsonmerge
+dctorch
+kornia
+accelerate
 clean-fid
 resize-right
-ftfy
-regex
-tqdm
+jsonmerge
 einops
 safetensors
-accelerate
 transformers
 diffusers
+tqdm
+ftfy
+regex
+boltons
