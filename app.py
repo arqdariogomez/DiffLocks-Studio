@@ -13,18 +13,11 @@ import traceback
 import torch
 from huggingface_hub import snapshot_download
 
-# --- 0. DIAGNÓSTICO DE INICIO ---
-print("\n" + "="*40)
+# --- 0. DIAGNOSTICS ---
 print("🔍 SYSTEM DIAGNOSTICS")
-print("="*40)
 token = os.environ.get("HF_TOKEN")
-if token:
-    print(f"✅ HF_TOKEN found (Length: {len(token)} chars)")
-    print(f"   Prefix: {token[:4]}...")
-else:
-    print("❌ FATAL: HF_TOKEN NOT FOUND in env vars!")
-print(f"📂 CWD: {os.getcwd()}")
-print("="*40 + "\n")
+if token: print(f"✅ HF_TOKEN found")
+else: print("❌ FATAL: HF_TOKEN NOT FOUND")
 
 # --- 1. SETUP ---
 try:
@@ -36,68 +29,52 @@ except ImportError:
 if str(cfg.repo_dir) not in sys.path:
     sys.path.append(str(cfg.repo_dir))
 
-# Configurar Assets Repo
 ASSETS_REPO_ID = "arqdariogomez/difflocks-assets-hybrid"
 
-# HF Spaces Setup & Auto-Download
 if cfg.platform == 'huggingface':
-    # 1. Install Blender
+    # Install Blender
     if not cfg.blender_exe.exists():
         print("📦 Installing Blender...")
         b_dir = Path("/tmp/blender"); b_dir.mkdir(parents=True, exist_ok=True)
         subprocess.run("wget -q -O /tmp/blender.tar.xz https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz", shell=True)
         subprocess.run(f"tar -xf /tmp/blender.tar.xz -C {b_dir} --strip-components=1", shell=True)
 
-    # 2. Download Checkpoints (INTEGRADO PARA VER ERRORES)
-    ckpt_dir = cfg.repo_dir / "checkpoints"
-    if not list(ckpt_dir.rglob("*.pth")):
-        print("🧠 Checkpoints missing. Starting download sequence...")
-        
-        if not token:
-            print("❌ Cannot download: No Token.")
-        else:
-            try:
-                print(f"   Downloading from {ASSETS_REPO_ID}...")
-                snapshot_download(
-                    repo_id=ASSETS_REPO_ID,
-                    repo_type="dataset",
-                    allow_patterns=["checkpoints/*", "assets/*"],
-                    local_dir=cfg.repo_dir, # Descargar directo al root del repo
-                    token=token
-                )
+    # Download Checkpoints
+    # Buscamos si ya tenemos AL MENOS el modelo principal
+    if not list(cfg.repo_dir.rglob("*.pth")):
+        print("🧠 Downloading Assets...")
+        try:
+            snapshot_download(
+                repo_id=ASSETS_REPO_ID,
+                repo_type="dataset",
+                # Bajamos checkpoints y también la raíz por si el .pt está suelto
+                allow_patterns=["checkpoints/*", "assets/*", "*.pt"],
+                local_dir=cfg.repo_dir, 
+                token=token
+            )
+            
+            # Organizar assets de Blender
+            src_assets = cfg.repo_dir / "assets"
+            dst_assets = cfg.repo_dir / "inference/assets"
+            if src_assets.exists():
+                dst_assets.mkdir(parents=True, exist_ok=True)
+                for f in src_assets.glob("*"):
+                    shutil.move(str(f), str(dst_assets / f.name))
+                shutil.rmtree(src_assets)
                 
-                # Mover assets si quedaron mal
-                # snapshot_download a veces crea carpetas anidadas si no se configuran bien
-                # pero aqui bajamos directo a la raiz del repo, así que:
-                # repo/checkpoints -> OK
-                # repo/assets -> Mover a repo/inference/assets
-                
-                src_assets = cfg.repo_dir / "assets"
-                dst_assets = cfg.repo_dir / "inference/assets"
-                
-                if src_assets.exists():
-                    print("   Organizing assets...")
-                    dst_assets.mkdir(parents=True, exist_ok=True)
-                    for f in src_assets.glob("*"):
-                        shutil.move(str(f), str(dst_assets / f.name))
-                    shutil.rmtree(src_assets)
-                    
-                print("✅ Download & Organization Complete!")
-                
-            except Exception as e:
-                print(f"❌ DOWNLOAD ERROR: {e}")
-                traceback.print_exc()
+        except Exception as e:
+            print(f"❌ DOWNLOAD ERROR: {e}")
 
-# --- 2. REST OF THE APP ---
-# Detect Device
+# --- 2. MODEL LOADER ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IS_CPU = (DEVICE == "cpu")
 
 from inference.img2hair import DiffLocksInference
 
-# Recursive find
-ckpt_files = list((cfg.repo_dir/"checkpoints").rglob("*diffusion*.pth"))
-vae_files = list((cfg.repo_dir/"checkpoints").rglob("strand_codec.pt"))
+# BÚSQUEDA PROFUNDA DE ARCHIVOS (FIX)
+# Buscamos en TODO el repo, no solo en la carpeta checkpoints
+ckpt_files = list(cfg.repo_dir.rglob("*diffusion*.pth")) or list(cfg.repo_dir.rglob("*.pth"))
+vae_files = list(cfg.repo_dir.rglob("strand_codec.pt"))
 conf_path = cfg.repo_dir / "configs/config_scalp_texture_conditional.json"
 
 model = None
@@ -106,17 +83,16 @@ def load_model():
     global model
     if model is not None: return
     
+    # Diagnóstico detallado si falta algo
     if not ckpt_files or not vae_files:
-        # Mensaje de error detallado para la UI
-        debug_info = f"Token Found: {bool(token)}. Files found: {list(cfg.repo_dir.rglob('*.pth'))}"
-        raise FileNotFoundError(f"Checkpoints missing! Logs: {debug_info}")
+        debug_msg = f"PTH Found: {len(ckpt_files)}, PT Found: {len(vae_files)}"
+        print(f"Files in repo: {list(cfg.repo_dir.rglob('*'))}")
+        raise FileNotFoundError(f"Missing Files! {debug_msg}")
     
-    print(f"Loading Model on {DEVICE}...")
+    print(f"Loading Model: {ckpt_files[0].name} / {vae_files[0].name}")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
 
-# ... (El resto de la lógica de inferencia y UI se mantiene igual) ...
-# ... (Solo copiamos la función run_inference y la UI de abajo) ...
-
+# ... (Resto del código igual: run_inference, UI, etc) ...
 try:
     import spaces
     has_zerogpu = True
@@ -143,7 +119,6 @@ def run_inference(img, cfg_val, fmts):
         npz_path = job_dir / "difflocks_output_strands.npz"
         yield None, None, "🎨 Rendering Preview...", gr.Group(visible=False), None
         
-        # Viz Logic (Simplified for brevity in update script)
         prev_path = None; fig_3d = None
         try:
             d=np.load(npz_path)['positions']; s=d[::max(1,len(d)//20000)]; p=s.reshape(-1,3); x,y,z=p[:,0],p[:,1],p[:,2]; rx,ry,rz=x,-z,y
