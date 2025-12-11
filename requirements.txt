@@ -29,6 +29,11 @@ opencv-python-headless
 trimesh
 kornia
 
+# === GEOMETRY PROCESSING (EL FIX ACTUAL) ===
+libigl
+scikit-image
+scikit-learn
+
 # === DIFFLOCKS INTERNALS ===
 torchdiffeq
 torchsde
@@ -41,5 +46,4 @@ regex
 tqdm
 boltons
 
-# NOTA: 'bpy' ha sido eliminado intencionalmente.
-# Blender se usa como ejecutable externo.
+# NOTA: bpy excluido intencionalmente (binario externo)
