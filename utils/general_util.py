@@ -446,7 +446,7 @@ def random_quaternions(
     Returns:
         Quaternions as tensor of shape (N, 4).
     """
-    o = torch.randn((n, 4), dtype=dtype, device=torch.device("cuda"))
+    o = torch.randn((n, 4), dtype=dtype, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     s = (o * o).sum(1)
     o = o / _copysign(torch.sqrt(s), o[:, 0])[:, None]
     return o

@@ -113,12 +113,12 @@ def prepare_gt_batch(batch, hyperparams, world2local, do_augmentation=False):
         nr_strands = gt_strand_positions.shape[0]
 
         #do some random horizontal flip
-        rand_strand_mask=torch.rand(nr_strands, device="cuda")>0.5
+        rand_strand_mask=torch.rand(nr_strands, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))>0.5
         gt_strand_positions[rand_strand_mask,:,0] = -gt_strand_positions[rand_strand_mask,:,0]
 
         #a bit of rotation do it through quaternions since they allows for linear interpolation which actually does a slerp. If they were rotation matrices I would need to implement slerp
         rotations_q = random_quaternions(nr_strands)
-        identity_q = torch.tensor([1, 0, 0, 0], device="cuda").view(1,4).repeat(nr_strands,1)
+        identity_q = torch.tensor([1, 0, 0, 0], device=torch.device("cuda" if torch.cuda.is_available() else "cpu")).view(1,4).repeat(nr_strands,1)
         #interpolate more towards an identity rotation
         rot_amount=0.1
         rotations_q = rotations_q*rot_amount + identity_q*(1.0-rot_amount)

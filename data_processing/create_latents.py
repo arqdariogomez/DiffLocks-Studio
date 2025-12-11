@@ -40,7 +40,7 @@ def generate_latents_dinov2(args, batch, preprocessor, model, output_latents_pat
     rgb_img=rgb_img[:,0:3,:,:]
 
 
-    rgb_input = preprocessor(rgb_img).to("cuda")
+    rgb_input = preprocessor(rgb_img).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     ret = model.forward_features(rgb_input)
     patch_tok = ret["x_norm_patchtokens"].clone()
     cls_tok = ret["x_norm_clstoken"].clone()

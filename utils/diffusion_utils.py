@@ -11,7 +11,7 @@ def sample_images(nr_images, model_ema, model_config, nr_iters=100, extra_args={
     x = torch.randn([1, n_per_proc, model_config['input_channels'], size[0], size[1]]).to("cuda" if torch.cuda.is_available() else "cpu")
     x = x[0] * sigma_max
     model_fn = model_ema
-    sigmas = K.sampling.get_sigmas_karras(nr_iters, sigma_min, sigma_max, rho=7., device="cuda")
+    sigmas = K.sampling.get_sigmas_karras(nr_iters, sigma_min, sigma_max, rho=7., device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     x_0 = K.sampling.sample_dpmpp_2m_sde(model_fn, x, sigmas, extra_args=extra_args, eta=0.0, solver_type='heun', disable=False, callback=callback)
     return x_0
 
@@ -27,6 +27,6 @@ def sample_images_cfg(nr_images, cfg_val, cfg_interval, model_ema, model_config,
     x = torch.randn([1, n_per_proc, model_config['input_channels'], size[0], size[1]]).to("cuda" if torch.cuda.is_available() else "cpu")
     x = x[0] * sigma_max
     model_fn = model_ema
-    sigmas = K.sampling.get_sigmas_karras(nr_iters, sigma_min, sigma_max, rho=7., device="cuda")
+    sigmas = K.sampling.get_sigmas_karras(nr_iters, sigma_min, sigma_max, rho=7., device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     x_0 = K.sampling.sample_dpmpp_2m_sde_cfg(model_fn, x, sigmas, cfg_val, cfg_interval, extra_args=extra_args,  eta=0.0, solver_type='heun', disable=False, callback=callback)
     return x_0

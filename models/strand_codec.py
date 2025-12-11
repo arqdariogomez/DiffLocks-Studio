@@ -303,7 +303,7 @@ class StrandGeneratorSiren(nn.Module):
         if self.decode_random_verts:
             # choose a random t for each strand
             # we can create only up until the very last vertex, except the tip, we need to be able to sample the next vertex so as to get a direction vector
-            probability = torch.ones([nr_strands, self.num_pts - 2], dtype=torch.float32, device=torch.device("cuda")) 
+            probability = torch.ones([nr_strands, self.num_pts - 2], dtype=torch.float32, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")) 
             point_indices = torch.multinomial(probability, self.nr_verts_to_create, replacement=False) # size of the chunk size we selected
             # add also the next vertex on the strand so that we can compute directions
             point_indices = torch.cat([point_indices, point_indices + 1], 1)
