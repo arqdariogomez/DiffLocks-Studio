@@ -1,41 +1,45 @@
-
-# === BASE CONFIG (NO TOCAR) ===
+# === INFRASTRUCTURE ===
 --extra-index-url https://download.pytorch.org/whl/cu121
---find-links https://shi-labs.com/natten/wheels/
---trusted-host shi-labs.com
-
-# === CRITICAL VERSIONS (GPU T4) ===
 torch==2.4.0
 torchvision==0.19.0
+--find-links https://shi-labs.com/natten/wheels/
+--trusted-host shi-labs.com
 natten==0.17.1+torch240cu121
+
+# === CORE ===
 numpy<2.0.0
 gradio==3.50.2
-
-# === DETECTED AUTOMATICALLY (Merged) ===
-accelerate
-bpy
-dctorch
-einops
-flash_attn
-gloss
-hjson
 huggingface_hub
-jsonmerge
-mathutils
-matplotlib
-mediapipe
-opencv_contrib_python
-opencv_python
-opencv_python_headless
-Pillow
-plotly
+accelerate
+transformers
+diffusers
 safetensors
+
+# === MATH & SCIENCE ===
 scipy
-spaces
+pandas
+matplotlib
+plotly
+einops
+
+# === VISION & 3D ===
+Pillow
+mediapipe
+opencv-python-headless
+trimesh
+kornia
+
+# === DIFFLOCKS INTERNALS ===
 torchdiffeq
 torchsde
-tqdm
-trimesh
-wandb
-xformers
+dctorch
 clean-fid
+resize-right
+jsonmerge
+ftfy
+regex
+tqdm
+boltons
+
+# NOTA: 'bpy' ha sido eliminado intencionalmente.
+# Blender se usa como ejecutable externo.
