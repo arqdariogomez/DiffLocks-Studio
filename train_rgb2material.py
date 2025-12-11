@@ -1,3 +1,4 @@
+import torch
 #!/usr/bin/env python3
 
 import os
@@ -144,8 +145,8 @@ def prepare_gt_batch(batch, hyperparams, do_augmentation=False):
     gt_dict = {}
 
     
-    gt_dict["dinov2_latents"]=batch["latents"]["dinov2"]["final_latent"].cuda()
-    gt_dict["material"]=batch["material"].cuda()
+    gt_dict["dinov2_latents"]=batch["latents"]["dinov2"]["final_latent"].to("cuda" if torch.cuda.is_available() else "cpu")
+    gt_dict["material"]=batch["material"].to("cuda" if torch.cuda.is_available() else "cpu")
 
     return gt_dict
 
@@ -185,7 +186,7 @@ def train(args, hyperparams, loader_train, loader_test, experiment_name, output_
 
     progress_bar = tqdm(range(0, hyperparams.nr_iters_to_train), desc="Training progress")
 
-    loss_zero=torch.zeros((1)).cuda()
+    loss_zero=torch.zeros((1)).to("cuda" if torch.cuda.is_available() else "cpu")
 
 
     is_in_training_loop=True

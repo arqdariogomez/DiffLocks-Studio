@@ -285,8 +285,8 @@ def compute_uv_space_data(
 #     roots_positions = roots_triangles[:, 0] * face_barys[:, 0:1] + \
 #                         roots_triangles[:, 1] * face_barys[:, 1:2] + \
 #                         roots_triangles[:, 2] * face_barys[:, 2:3]
-#     strds_points = orig_points + roots_positions[:, None, :].cuda()
-#     # density = torch.from_numpy(density).cuda().type(torch.float32)
+#     strds_points = orig_points + roots_positions[:, None, :].to("cuda" if torch.cuda.is_available() else "cpu")
+#     # density = torch.from_numpy(density).to("cuda" if torch.cuda.is_available() else "cpu").type(torch.float32)
 #     # indexs = torch.gt(torch.minimum(density,torch.ones_like(density)),torch.rand_like(density))
 
 #     return strds_points[indexs],pred_points[indexs]
@@ -345,7 +345,7 @@ def tbn_space_to_world(root_uv, strands_positions, scalp_mesh_data):
     #interpolate
     root_tangent, root_bitangent, root_normal = interpolate_tbn(barys, vertex_idxs, mesh_v_tangents, mesh_v_bitangents, mesh_v_normals) 
     strands_tbn = np.stack((root_tangent,root_bitangent,root_normal),axis=2) 
-    strands_tbn = torch.from_numpy(strands_tbn).cuda()
+    strands_tbn = torch.from_numpy(strands_tbn).to("cuda" if torch.cuda.is_available() else "cpu")
     # print("strands_tbn",strands_tbn.shape)
     
     # #we want to map tangent to X, bitangent to Z and normal to Y, so we swap B and N
@@ -380,8 +380,8 @@ def tbn_space_to_world(root_uv, strands_positions, scalp_mesh_data):
     # print("root in computing tbn to root", roots_positions)
 
 
-    strds_points = orig_points + roots_positions[:, None, :].cuda()
-    # # density = torch.from_numpy(density).cuda().type(torch.float32)
+    strds_points = orig_points + roots_positions[:, None, :].to("cuda" if torch.cuda.is_available() else "cpu")
+    # # density = torch.from_numpy(density).to("cuda" if torch.cuda.is_available() else "cpu").type(torch.float32)
     # # indexs = torch.gt(torch.minimum(density,torch.ones_like(density)),torch.rand_like(density))
 
     # return strds_points[indexs],pred_points[indexs]

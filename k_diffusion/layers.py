@@ -65,7 +65,7 @@ class Denoiser(nn.Module):
             raise ValueError(f'Unknown weighting type {weighting}')
 
         if loss_weight_per_channel is not None: 
-            self.loss_weight_per_channel=torch.as_tensor(loss_weight_per_channel).cuda()
+            self.loss_weight_per_channel=torch.as_tensor(loss_weight_per_channel).to("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.loss_weight_per_channel=None
         

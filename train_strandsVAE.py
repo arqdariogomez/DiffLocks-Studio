@@ -1,3 +1,4 @@
+import torch
 #!/usr/bin/env python3
 
 # python3 ./train_strandsVAE.py --dataset_path=<PATH_DIFFLOCKS> --exp_info=<name>
@@ -98,9 +99,9 @@ def create_dataloaders(dataset_path):
 def prepare_gt_batch(batch, hyperparams, world2local, do_augmentation=False):
     gt_dict = {}
 
-    tbn=batch['full_strands']["tbn"].cuda()
-    positions=batch['full_strands']["positions"].cuda()
-    root_normal=batch['full_strands']["root_normal"].cuda()
+    tbn=batch['full_strands']["tbn"].to("cuda" if torch.cuda.is_available() else "cpu")
+    positions=batch['full_strands']["positions"].to("cuda" if torch.cuda.is_available() else "cpu")
+    root_normal=batch['full_strands']["root_normal"].to("cuda" if torch.cuda.is_available() else "cpu")
 
     #get it on local space
     gt_strand_positions, gt_root_normals = world2local(tbn, positions, root_normal)

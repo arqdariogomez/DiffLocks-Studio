@@ -30,15 +30,15 @@ torch.set_grad_enabled(False)
 def prepare_gt_batch(batch):
     gt_dict = {}
 
-    tbn=batch['full_strands']["tbn"].cuda()
-    positions=batch['full_strands']["positions"].cuda()
-    root_normal=batch['full_strands']["root_normal"].cuda()
+    tbn=batch['full_strands']["tbn"].to("cuda" if torch.cuda.is_available() else "cpu")
+    positions=batch['full_strands']["positions"].to("cuda" if torch.cuda.is_available() else "cpu")
+    root_normal=batch['full_strands']["root_normal"].to("cuda" if torch.cuda.is_available() else "cpu")
 
     #get it on local space
     gt_strand_positions, gt_root_normals = world_to_tbn_space(tbn, 
                                                               positions, 
                                                               root_normal)
-    gt_strand_positions=gt_strand_positions.cuda()
+    gt_strand_positions=gt_strand_positions.to("cuda" if torch.cuda.is_available() else "cpu")
 
     #reshape it to be nr_strands, nr_points, dim
     gt_strand_positions=gt_strand_positions.reshape(-1,256,3)
@@ -92,14 +92,14 @@ def main():
                         decode_type="dir",
                         scale_init=30.0,
                         nr_verts_per_strand=256, nr_values_to_decode=255,
-                        dim_per_value_decoded=3).cuda()
+                        dim_per_value_decoded=3).to("cuda" if torch.cuda.is_available() else "cpu")
     model.load_state_dict(torch.load(path_strand_vae_model))
     model = torch.compile(model)
 
 
 
     #latent of dimension 64 and get GT which is the mean strand
-    latent=torch.zeros(1,64).cuda()
+    latent=torch.zeros(1,64).to("cuda" if torch.cuda.is_available() else "cpu")
     pred_dict = model.decoder(latent, None, normalization_dict)
     pred_points=pred_dict["strand_positions"]
     gt_strand=pred_points
@@ -113,7 +113,7 @@ def main():
     #for each dimension change it by 0.5 and check the error towards the mean strand (GT)
     loss_per_dim=[]
     for i in range(64):
-        latent=torch.zeros(1,64).cuda()
+        latent=torch.zeros(1,64).to("cuda" if torch.cuda.is_available() else "cpu")
         latent[:,i]=0.8
         pred_dict = model.decoder(latent, None, normalization_dict)
         pred_points=pred_dict["strand_positions"]

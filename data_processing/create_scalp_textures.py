@@ -40,15 +40,15 @@ torch.set_grad_enabled(False)
 def prepare_gt_batch(batch):
     gt_dict = {}
 
-    tbn=batch['full_strands']["tbn"].cuda()
-    positions=batch['full_strands']["positions"].cuda()
-    root_normal=batch['full_strands']["root_normal"].cuda()
+    tbn=batch['full_strands']["tbn"].to("cuda" if torch.cuda.is_available() else "cpu")
+    positions=batch['full_strands']["positions"].to("cuda" if torch.cuda.is_available() else "cpu")
+    root_normal=batch['full_strands']["root_normal"].to("cuda" if torch.cuda.is_available() else "cpu")
 
     #get it on local space
     gt_strand_positions, gt_root_normals = world_to_tbn_space(tbn, 
                                                               positions, 
                                                               root_normal)
-    gt_strand_positions=gt_strand_positions.cuda()
+    gt_strand_positions=gt_strand_positions.to("cuda" if torch.cuda.is_available() else "cpu")
 
     #reshape it to be nr_strands, nr_points, dim
     gt_strand_positions=gt_strand_positions.reshape(-1,256,3)
@@ -97,16 +97,16 @@ def generate_scalp_textures(batch, model, normalization_dict, tex_size, output_s
 
     #assign directly to pixels
     strand_uv = batch["full_strands"]["root_uv"]
-    strand_uv=strand_uv.cuda().squeeze(0)
+    strand_uv=strand_uv.to("cuda" if torch.cuda.is_available() else "cpu").squeeze(0)
     strand_uv_orig_flip = strand_uv
     strand_uv_orig_flip[:,1]=1.0-strand_uv_orig_flip[:,1]
     strand_indices = (strand_uv_orig_flip*tex_size).floor().int() #TODO Do we need to add a +0.5?
-    scalp_texture = torch.zeros(1,64,tex_size,tex_size).cuda()
+    scalp_texture = torch.zeros(1,64,tex_size,tex_size).to("cuda" if torch.cuda.is_available() else "cpu")
     scalp_texture[:,:,strand_indices[:,1],strand_indices[:,0]] = latents.transpose(0,1).unsqueeze(0) #make latents 1,64,nr_strands
 
     #get mask
-    scalp_mask = torch.zeros(1,1,tex_size,tex_size).cuda()
-    homogeneous_coord = torch.ones(nr_strands,1).cuda()
+    scalp_mask = torch.zeros(1,1,tex_size,tex_size).to("cuda" if torch.cuda.is_available() else "cpu")
+    homogeneous_coord = torch.ones(nr_strands,1).to("cuda" if torch.cuda.is_available() else "cpu")
     scalp_mask[:,:,strand_indices[:,1],strand_indices[:,0]]=homogeneous_coord.transpose(0,1).unsqueeze(0)
     torchvision.utils.save_image(scalp_mask.squeeze(0), os.path.join(output_scalp_texture_path,"scalp_mask_"+str(tex_size)+".png"))
                                     
@@ -137,7 +137,7 @@ def generate_scalp_textures(batch, model, normalization_dict, tex_size, output_s
 
 def horizontally_flip(batch, scalp_mesh_data):
 
-    # tbn=batch['full_strands']["tbn"].cuda()
+    # tbn=batch['full_strands']["tbn"].to("cuda" if torch.cuda.is_available() else "cpu")
     positions=batch['full_strands']["positions"][0].numpy()
     # print("positions", positions.shape)
 
@@ -164,9 +164,9 @@ def horizontally_flip(batch, scalp_mesh_data):
     tbn = np.stack((root_tangent,root_bitangent,root_normal),axis=2) 
 
     #put it back on cuda
-    tbn=torch.from_numpy(tbn).unsqueeze(0).cuda()
-    positions=torch.from_numpy(positions).unsqueeze(0).cuda()
-    root_normal=root_normal.unsqueeze(0).cuda()
+    tbn=torch.from_numpy(tbn).unsqueeze(0).to("cuda" if torch.cuda.is_available() else "cpu")
+    positions=torch.from_numpy(positions).unsqueeze(0).to("cuda" if torch.cuda.is_available() else "cpu")
+    root_normal=root_normal.unsqueeze(0).to("cuda" if torch.cuda.is_available() else "cpu")
 
 
     batch['full_strands']["tbn"]=tbn
@@ -206,7 +206,7 @@ def main():
                         decode_type="dir",
                         scale_init=30.0,
                         nr_verts_per_strand=256, nr_values_to_decode=255,
-                        dim_per_value_decoded=3).cuda()
+                        dim_per_value_decoded=3).to("cuda" if torch.cuda.is_available() else "cpu")
     model.load_state_dict(torch.load(args.path_strand_vae_model))
     model = torch.compile(model)
 

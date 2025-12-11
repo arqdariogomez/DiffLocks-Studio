@@ -36,7 +36,7 @@ def horizontally_flip(batch):
 
 def generate_latents_dinov2(args, batch, preprocessor, model, output_latents_path):
     #encode img
-    rgb_img=batch["rgb_img"].cuda()
+    rgb_img=batch["rgb_img"].to("cuda" if torch.cuda.is_available() else "cpu")
     rgb_img=rgb_img[:,0:3,:,:]
 
 
@@ -99,7 +99,7 @@ def main():
         T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
     ])
     latents_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg')
-    latents_model.cuda()
+    latents_model.to("cuda" if torch.cuda.is_available() else "cpu")
 
     latents_model.eval()
 

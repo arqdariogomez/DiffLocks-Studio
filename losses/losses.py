@@ -31,7 +31,7 @@ def compute_loss_dir_dot(gt_hair_strands, pred_hair_strands):
     gt_dir = compute_dirs(gt_hair_strands)
     gt_dir = gt_dir.view(-1, 3)
     gt_dir = torch.nn.functional.normalize(gt_dir, dim=-1)
-    # loss_dir = self.cosine_embed_loss(pred_deltas, gt_dir, torch.ones(gt_dir.shape[0]).cuda())
+    # loss_dir = self.cosine_embed_loss(pred_deltas, gt_dir, torch.ones(gt_dir.shape[0]).to("cuda" if torch.cuda.is_available() else "cpu"))
 
     dot = torch.sum(pred_deltas * gt_dir, dim=-1)
 
@@ -53,7 +53,7 @@ def compute_loss_dir_l1(gt_hair_strands, pred_hair_strands):
     gt_dir = compute_dirs(gt_hair_strands)
     gt_dir = gt_dir.view(-1, 3)
     gt_dir = gt_dir*nr_verts_per_strand #Just because the deltas are very tiny and I want them in a nicer range for the loss
-    # loss_dir = self.cosine_embed_loss(pred_deltas, gt_dir, torch.ones(gt_dir.shape[0]).cuda())
+    # loss_dir = self.cosine_embed_loss(pred_deltas, gt_dir, torch.ones(gt_dir.shape[0]).to("cuda" if torch.cuda.is_available() else "cpu"))
 
     loss_l1 = torch.nn.functional.l1_loss(pred_deltas, gt_dir).mean()
     return loss_l1
@@ -74,7 +74,7 @@ def compute_loss_curv_l1(gt_hair_strands, pred_hair_strands):
     gt_curvs = compute_curv(gt_dir)
     gt_curvs = gt_curvs.view(-1, 3)
     gt_curvs = gt_curvs*nr_verts_per_strand #Just because the deltas are very tiny and I want them in a nicer range for the loss
-    # loss_dir = self.cosine_embed_loss(pred_deltas, gt_dir, torch.ones(gt_dir.shape[0]).cuda())
+    # loss_dir = self.cosine_embed_loss(pred_deltas, gt_dir, torch.ones(gt_dir.shape[0]).to("cuda" if torch.cuda.is_available() else "cpu"))
 
     loss_l1 = torch.nn.functional.l1_loss(pred_curvs, gt_curvs).mean()
     return loss_l1

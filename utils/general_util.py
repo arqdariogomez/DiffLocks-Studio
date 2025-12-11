@@ -149,7 +149,7 @@ def strands_from_signal(signal):
         strand = inverse_FDT(s)
         strands.append(strand[None,...])
     strands = np.concatenate(strands,0)
-    strands = torch.from_numpy(strands).type(torch.float32).cuda()
+    strands = torch.from_numpy(strands).type(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
     return strands
     # strands = []
     # signals = signals.cpu().numpy()
@@ -157,7 +157,7 @@ def strands_from_signal(signal):
     #     strand = inverse_FDT(s)
     #     strands.append(strand[None,...])
     # strands = np.concatenate(strands, 0)
-    # strands = torch.from_numpy(strands).type(torch.float32).cuda()
+    # strands = torch.from_numpy(strands).type(torch.float32).to("cuda" if torch.cuda.is_available() else "cpu")
     # return strands
 
 
