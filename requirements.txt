@@ -4,12 +4,11 @@ torch==2.4.0
 torchvision==0.19.0
 
 # === NATTEN (FIX SSL ERROR) ===
-# Le decimos a pip que confíe en shi-labs aunque el certificado esté vencido
 --find-links https://shi-labs.com/natten/wheels/
 --trusted-host shi-labs.com
 natten==0.17.1+torch240cu121
 
-# === CORE ===
+# === CORE & UI ===
 numpy<2.0.0
 gradio==3.50.2
 matplotlib
@@ -21,7 +20,8 @@ scipy
 trimesh
 huggingface_hub
 
-# === MATH & DIFFUSION (EVITA EL WHACK-A-MOLE) ===
+# === K-DIFFUSION & MATH CORE (LO QUE FALTABA) ===
+dctorch
 torchdiffeq
 jsonmerge
 clean-fid
@@ -31,3 +31,6 @@ regex
 tqdm
 einops
 safetensors
+accelerate
+transformers
+diffusers
