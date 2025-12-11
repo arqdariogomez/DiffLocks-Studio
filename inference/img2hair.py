@@ -151,13 +151,13 @@ class DiffLocksInference():
             
             cropped_face = crop_face(frame, lms, 770)
             del frame
-            rgb_img_gpu = torch.tensor(cropped_face).cuda().permute(2,0,1).unsqueeze(0).float()/255.0
+            rgb_img_gpu = torch.tensor(cropped_face).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.0
             rgb_img_cpu = rgb_img_gpu.cpu().clone() # Backup para guardar al final
             yield "log", "✅ Rostro detectado y recortado (Zoom 2.8x)"
             
             # 2. DINO
             yield "status", "🦖 2/5: Extrayendo Características (DINOv2)..."
-            dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', verbose=False).cuda()
+            dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', verbose=False).to("cuda" if torch.cuda.is_available() else "cpu")
             tf = T.Compose([T.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
             out = dinov2.forward_features(tf(rgb_img_gpu))
             patch = out["x_norm_patchtokens"]
@@ -175,13 +175,13 @@ class DiffLocksInference():
             yield "status", "🌫️ 3/5: Difusión (Generando Pelo)..."
             yield "log", "⏳ Cargando modelo de difusión..."
             conf = K.config.load_config(self.paths['config'])
-            model = K.config.make_denoiser_wrapper(conf)(K.config.make_model(conf).cuda())
+            model = K.config.make_denoiser_wrapper(conf)(K.config.make_model(conf).to("cuda" if torch.cuda.is_available() else "cpu"))
             ckpt = torch.load(self.paths['diff'], map_location='cpu', weights_only=False)
             model.inner_model.load_state_dict(ckpt['model_ema'])
             del ckpt; force_cleanup()
             model.eval(); model.inner_model.condition_dropout_rate = 0.0
             
-            extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_cpu.cuda(), "final_latent": patch_emb_cpu.cuda()}}}
+            extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu"), "final_latent": patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu")}}}
             
             yield "log", "🎨 Iniciando muestreo (Sampling)... Esto tomará unos minutos."
             # Sampling (Sin autocast para igualar referencia)
@@ -233,6 +233,6 @@ class DiffLocksInference():
     def file2hair(self, fpath, out, cfg_val=None):
         img = cv2.imread(fpath)
         if img is None: raise FileNotFoundError(f"{fpath}")
-        rgb = torch.tensor(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).cuda().permute(2,0,1).unsqueeze(0).float()/255.
+        rgb = torch.tensor(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.
         # Propagamos el generador
         yield from self.rgb2hair(rgb, out, cfg_val=cfg_val)

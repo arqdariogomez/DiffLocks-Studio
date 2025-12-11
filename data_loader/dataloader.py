@@ -658,18 +658,18 @@ class DiffLocksDataset(Dataset):
         #center the strand data to be drawn from unit gaussian
 
         #For strand data contining xyz positions
-        xyz_mean = torch.tensor([[-0.0001, -0.0080, -0.0602]]).cuda()
-        xyz_std = torch.tensor([0.0600, 0.0564, 0.0562]).cuda()
+        xyz_mean = torch.tensor([[-0.0001, -0.0080, -0.0602]]).to("cuda" if torch.cuda.is_available() else "cpu")
+        xyz_std = torch.tensor([0.0600, 0.0564, 0.0562]).to("cuda" if torch.cuda.is_available() else "cpu")
         normalization_dict["xyz_mean"]=xyz_mean
         normalization_dict["xyz_std"]=xyz_std
 
-        dir_mean = torch.tensor([[-8.7517e-07, -9.2789e-05, -4.3253e-04]]).cuda()
-        dir_std = torch.tensor([0.0005, 0.0005, 0.0004]).cuda()
+        dir_mean = torch.tensor([[-8.7517e-07, -9.2789e-05, -4.3253e-04]]).to("cuda" if torch.cuda.is_available() else "cpu")
+        dir_std = torch.tensor([0.0005, 0.0005, 0.0004]).to("cuda" if torch.cuda.is_available() else "cpu")
         normalization_dict["dir_mean"]=dir_mean
         normalization_dict["dir_std"]=dir_std
 
-        curv_mean = torch.tensor([[ 6.2361e-09, -2.4707e-06,  3.8570e-07]]).cuda()
-        curv_std = torch.tensor([3.0512e-05, 3.7916e-05, 2.7756e-05]).cuda()
+        curv_mean = torch.tensor([[ 6.2361e-09, -2.4707e-06,  3.8570e-07]]).to("cuda" if torch.cuda.is_available() else "cpu")
+        curv_std = torch.tensor([3.0512e-05, 3.7916e-05, 2.7756e-05]).to("cuda" if torch.cuda.is_available() else "cpu")
         normalization_dict["curv_mean"]=curv_mean
         normalization_dict["curv_std"]=curv_std
 
@@ -689,9 +689,9 @@ class DiffLocksDataset(Dataset):
         scalp_mesh_data["v_normals"]=scalp_v_normals
         # #have it also on gpu to avoid too many transfers between cpu and gpu
         # self.scalp_mesh_data_gpu={}
-        # self.scalp_mesh_data_gpu["verts"]=torch.from_numpy(scalp_v).cuda()
-        # self.scalp_mesh_data_gpu["faces"]=torch.from_numpy(scalp_f).cuda()
-        # self.scalp_mesh_data_gpu["uv"]=torch.from_numpy(scalp_uv).cuda()
+        # self.scalp_mesh_data_gpu["verts"]=torch.from_numpy(scalp_v).to("cuda" if torch.cuda.is_available() else "cpu")
+        # self.scalp_mesh_data_gpu["faces"]=torch.from_numpy(scalp_f).to("cuda" if torch.cuda.is_available() else "cpu")
+        # self.scalp_mesh_data_gpu["uv"]=torch.from_numpy(scalp_uv).to("cuda" if torch.cuda.is_available() else "cpu")
         #get also tbn for each vertex of the mesh
 
         #compute also a rasterized map of barycentric coordinates and face indices
