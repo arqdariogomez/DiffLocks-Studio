@@ -11,8 +11,22 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import traceback
 import torch
+from huggingface_hub import snapshot_download
 
-# --- 1. PLATFORM SETUP ---
+# --- 0. DIAGNÓSTICO DE INICIO ---
+print("\n" + "="*40)
+print("🔍 SYSTEM DIAGNOSTICS")
+print("="*40)
+token = os.environ.get("HF_TOKEN")
+if token:
+    print(f"✅ HF_TOKEN found (Length: {len(token)} chars)")
+    print(f"   Prefix: {token[:4]}...")
+else:
+    print("❌ FATAL: HF_TOKEN NOT FOUND in env vars!")
+print(f"📂 CWD: {os.getcwd()}")
+print("="*40 + "\n")
+
+# --- 1. SETUP ---
 try:
     from platform_config import cfg
 except ImportError:
@@ -22,45 +36,66 @@ except ImportError:
 if str(cfg.repo_dir) not in sys.path:
     sys.path.append(str(cfg.repo_dir))
 
-# Detect Device & ZeroGPU
-try:
-    import spaces
-    has_zerogpu = True
-except ImportError:
-    has_zerogpu = False
+# Configurar Assets Repo
+ASSETS_REPO_ID = "arqdariogomez/difflocks-assets-hybrid"
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-IS_CPU = (DEVICE == "cpu")
-
-if IS_CPU:
-    print("\n" + "!"*60)
-    print("⚠️  WARNING: RUNNING IN CPU MODE")
-    print("   Inference will be extremely slow (15-30 mins per image).")
-    print("   Please apply for a ZeroGPU grant or use Colab/Kaggle.")
-    print("!"*60 + "\n")
-
-# HF Auto-Setup
+# HF Spaces Setup & Auto-Download
 if cfg.platform == 'huggingface':
-    # Blender
+    # 1. Install Blender
     if not cfg.blender_exe.exists():
         print("📦 Installing Blender...")
         b_dir = Path("/tmp/blender"); b_dir.mkdir(parents=True, exist_ok=True)
         subprocess.run("wget -q -O /tmp/blender.tar.xz https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz", shell=True)
         subprocess.run(f"tar -xf /tmp/blender.tar.xz -C {b_dir} --strip-components=1", shell=True)
 
-    # Checkpoints
-    # Buscamos si existe el modelo. Si no, intentamos descargar.
-    if not list((cfg.repo_dir/"checkpoints").rglob("*.pth")):
-        print("🧠 Checkpoints missing. Running download script...")
-        res = subprocess.run(["python", "download_checkpoints.py"], capture_output=True, text=True)
-        print(res.stdout)
-        if res.returncode != 0:
-            print(f"❌ Auto-download failed:\n{res.stderr}")
+    # 2. Download Checkpoints (INTEGRADO PARA VER ERRORES)
+    ckpt_dir = cfg.repo_dir / "checkpoints"
+    if not list(ckpt_dir.rglob("*.pth")):
+        print("🧠 Checkpoints missing. Starting download sequence...")
+        
+        if not token:
+            print("❌ Cannot download: No Token.")
+        else:
+            try:
+                print(f"   Downloading from {ASSETS_REPO_ID}...")
+                snapshot_download(
+                    repo_id=ASSETS_REPO_ID,
+                    repo_type="dataset",
+                    allow_patterns=["checkpoints/*", "assets/*"],
+                    local_dir=cfg.repo_dir, # Descargar directo al root del repo
+                    token=token
+                )
+                
+                # Mover assets si quedaron mal
+                # snapshot_download a veces crea carpetas anidadas si no se configuran bien
+                # pero aqui bajamos directo a la raiz del repo, así que:
+                # repo/checkpoints -> OK
+                # repo/assets -> Mover a repo/inference/assets
+                
+                src_assets = cfg.repo_dir / "assets"
+                dst_assets = cfg.repo_dir / "inference/assets"
+                
+                if src_assets.exists():
+                    print("   Organizing assets...")
+                    dst_assets.mkdir(parents=True, exist_ok=True)
+                    for f in src_assets.glob("*"):
+                        shutil.move(str(f), str(dst_assets / f.name))
+                    shutil.rmtree(src_assets)
+                    
+                print("✅ Download & Organization Complete!")
+                
+            except Exception as e:
+                print(f"❌ DOWNLOAD ERROR: {e}")
+                traceback.print_exc()
 
-# --- 2. MODEL LOADER ---
+# --- 2. REST OF THE APP ---
+# Detect Device
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+IS_CPU = (DEVICE == "cpu")
+
 from inference.img2hair import DiffLocksInference
 
-# Recursive find to be safe
+# Recursive find
 ckpt_files = list((cfg.repo_dir/"checkpoints").rglob("*diffusion*.pth"))
 vae_files = list((cfg.repo_dir/"checkpoints").rglob("strand_codec.pt"))
 conf_path = cfg.repo_dir / "configs/config_scalp_texture_conditional.json"
@@ -72,17 +107,21 @@ def load_model():
     if model is not None: return
     
     if not ckpt_files or not vae_files:
-        raise FileNotFoundError("Checkpoints missing! Ensure 'HF_TOKEN' is set in Settings -> Secrets.")
+        # Mensaje de error detallado para la UI
+        debug_info = f"Token Found: {bool(token)}. Files found: {list(cfg.repo_dir.rglob('*.pth'))}"
+        raise FileNotFoundError(f"Checkpoints missing! Logs: {debug_info}")
     
     print(f"Loading Model on {DEVICE}...")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
 
-# Preload only if GPU is available (save CPU start time)
-if not has_zerogpu and not IS_CPU:
-    try: load_model()
-    except: pass
+# ... (El resto de la lógica de inferencia y UI se mantiene igual) ...
+# ... (Solo copiamos la función run_inference y la UI de abajo) ...
 
-# --- 3. INFERENCE ---
+try:
+    import spaces
+    has_zerogpu = True
+except: has_zerogpu = False
+
 def run_inference(img, cfg_val, fmts):
     job_id = f"j_{int(time.time())}"
     job_dir = cfg.output_dir / job_id
@@ -96,16 +135,15 @@ def run_inference(img, cfg_val, fmts):
         if isinstance(img, str): shutil.copy(img, img_p)
         else: img.save(img_p)
         
-        # Generate
         model.cfg_val = float(cfg_val)
         for update in model.file2hair(str(img_p), str(job_dir)):
             if isinstance(update, tuple) and update[0] == "status":
                 yield None, None, f"⚙️ {update[1]}", gr.Group(visible=False), None
         
-        # Preview
         npz_path = job_dir / "difflocks_output_strands.npz"
         yield None, None, "🎨 Rendering Preview...", gr.Group(visible=False), None
         
+        # Viz Logic (Simplified for brevity in update script)
         prev_path = None; fig_3d = None
         try:
             d=np.load(npz_path)['positions']; s=d[::max(1,len(d)//20000)]; p=s.reshape(-1,3); x,y,z=p[:,0],p[:,1],p[:,2]; rx,ry,rz=x,-z,y
@@ -120,7 +158,6 @@ def run_inference(img, cfg_val, fmts):
             fig_3d = go.Figure(data=[go.Scatter3d(x=np.hstack([rx3.reshape(s3.shape[:2]),np.full((s3.shape[0],1),np.nan)]).flatten(), y=np.hstack([ry3.reshape(s3.shape[:2]),np.full((s3.shape[0],1),np.nan)]).flatten(), z=np.hstack([rz3.reshape(s3.shape[:2]),np.full((s3.shape[0],1),np.nan)]).flatten(), mode='lines', line=dict(width=1.5,color=c3,colorscale=[[0,'#505050'],[1,'white']],showscale=False))], layout=dict(paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',scene=dict(xaxis=dict(visible=False),yaxis=dict(visible=False),zaxis=dict(visible=False),bgcolor='rgba(0,0,0,0)'),margin=dict(l=0,r=0,b=0,t=0),height=500))
         except: pass
 
-        # Export
         outputs = [str(npz_path)]
         blender_keys = [k for k,v in {'.blend':'Blender','.abc':'Alembic','.usd':'USD'}.items() if v in fmts]
         if blender_keys and cfg.blender_exe.exists():
@@ -145,38 +182,18 @@ def run_inference(img, cfg_val, fmts):
 if has_zerogpu:
     run_inference = spaces.GPU(duration=120)(run_inference)
 
-# --- 4. UI ---
 css = """
-.cpu-warning {
-    background-color: #fffbeb; 
-    border: 1px solid #f59e0b; 
-    color: #92400e; 
-    padding: 15px; 
-    border-radius: 8px; 
-    margin-bottom: 20px;
-    font-size: 16px;
-    text-align: center;
-}
+.cpu-warning { background-color: #fffbeb; border: 1px solid #f59e0b; color: #92400e; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 16px; text-align: center; }
 """
 
 with gr.Blocks(theme=gr.themes.Soft(), css=css, title="DiffLocks Studio") as demo:
     gr.Markdown("# 💇‍♀️ DiffLocks Studio (Universal)")
-    
-    # CPU WARNING BANNER
-    if IS_CPU:
-        gr.HTML("""
-        <div class="cpu-warning">
-            <b>⚠️ RUNNING IN CPU MODE (SLOW)</b><br>
-            Generation will take significant time (15-30 mins).<br>
-            For fast inference, please check <a href='https://github.com/arqdariogomez/DiffLocks-Studio' target='_blank'><b>GitHub</b></a> for Colab/Kaggle options or apply for ZeroGPU.
-        </div>
-        """)
-
+    if IS_CPU: gr.HTML('<div class="cpu-warning"><b>⚠️ RUNNING IN CPU MODE (SLOW)</b><br>For fast inference, run on Colab/Kaggle or apply for ZeroGPU.</div>')
     with gr.Row():
         with gr.Column():
             inp = gr.Image(type="filepath", label="Input Face")
             cfg_s = gr.Slider(1, 7, 2.5, label="CFG Scale")
-            chk = gr.CheckboxGroup(["Blender", "Alembic", "USD"], label="Exports (Requires Blender)", value=[])
+            chk = gr.CheckboxGroup(["Blender", "Alembic", "USD"], label="Exports", value=[])
             btn = gr.Button("🚀 Generate", variant="primary")
         with gr.Column():
             status = gr.HTML("Ready")
@@ -185,7 +202,6 @@ with gr.Blocks(theme=gr.themes.Soft(), css=css, title="DiffLocks Studio") as dem
                     with gr.Tab("3D"): p3d = gr.Plot()
                     with gr.Tab("2D"): p2d = gr.Image()
                 files = gr.File(label="Download ZIP")
-    
     btn.click(run_inference, [inp, cfg_s, chk], [p3d, p2d, status, res_grp, files])
 
 if __name__ == "__main__":
