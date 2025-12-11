@@ -1,45 +1,41 @@
-# === CORE (PYTORCH) ===
---extra-index-url https://download.pytorch.org/whl/cu121
-torch==2.4.0
-torchvision==0.19.0
 
-# === NATTEN (SSL FIX) ===
+# === BASE CONFIG (NO TOCAR) ===
+--extra-index-url https://download.pytorch.org/whl/cu121
 --find-links https://shi-labs.com/natten/wheels/
 --trusted-host shi-labs.com
+
+# === CRITICAL VERSIONS (GPU T4) ===
+torch==2.4.0
+torchvision==0.19.0
 natten==0.17.1+torch240cu121
-
-# === WEB UI ===
-gradio==3.50.2
-huggingface_hub
-
-# === MATH & SCIENCE (Aquí es donde fallaba) ===
 numpy<2.0.0
-scipy
-pandas
-matplotlib
-plotly
+gradio==3.50.2
 
-# === IMAGEN & 3D ===
-Pillow
-mediapipe
-opencv-python-headless
-trimesh
-
-# === K-DIFFUSION FULL STACK (TODAS LAS DEPENDENCIAS POSIBLES) ===
-# El error actual era torchsde. Agregamos el resto por seguridad.
-torchsde
-torchdiffeq
-dctorch
-kornia
+# === DETECTED AUTOMATICALLY (Merged) ===
 accelerate
-clean-fid
-resize-right
-jsonmerge
+bpy
+dctorch
 einops
+flash_attn
+gloss
+hjson
+huggingface_hub
+jsonmerge
+mathutils
+matplotlib
+mediapipe
+opencv_contrib_python
+opencv_python
+opencv_python_headless
+Pillow
+plotly
 safetensors
-transformers
-diffusers
+scipy
+spaces
+torchdiffeq
+torchsde
 tqdm
-ftfy
-regex
-boltons
+trimesh
+wandb
+xformers
+clean-fid
