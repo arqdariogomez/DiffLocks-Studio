@@ -1,0 +1,29 @@
+# DiffLocks Studio - Pinokio Requirements
+# PyTorch y NATTEN se instalan via torch.js según GPU/CPU
+
+numpy<2.0.0
+gradio==3.50.2
+Pillow==10.4.0
+opencv-contrib-python==4.10.0.84
+opencv-python-headless==4.10.0.84
+dctorch
+torchsde
+libigl
+trimesh
+einops
+transformers
+accelerate
+safetensors
+scipy
+pandas
+tqdm
+torchdiffeq
+jsonmerge
+ftfy
+regex
+clean-fid
+resize-right
+huggingface_hub
+matplotlib
+plotly
+mediapipe
