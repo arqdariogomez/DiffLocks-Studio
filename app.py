@@ -154,7 +154,7 @@ def translate_status(msg):
     translations = [
         ("1/5", "📸 Preprocessing image...", f"~15s{time_modifier}"),
         ("2/5", "🔍 Extracting features...", f"~45s{time_modifier}"),
-        ("3/5", "✨ Running diffusion...", "~6 min" if not IS_CPU else "~2+ hours"),
+        ("3/5", "✨ Running diffusion...", "~6 min" if not IS_CPU else "~16 hours (with gpu it takes 6 min"),
         ("4/5", "🧶 Decoding strands...", f"~30s{time_modifier}"),
         ("5/5", "🏁 Finalizing geometry...", f"~10s{time_modifier}"),
     ]
