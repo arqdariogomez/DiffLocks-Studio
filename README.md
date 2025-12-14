@@ -14,7 +14,7 @@ license: mit
 
 **High-Fidelity 3D Hair Generation from Single Images**
 
-[![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arqdariogomez/DiffLocks-Studio/blob/main/notebooks/difflocks_colab.ipynb)
+[![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1PA04tPX8WUiFtghc2fkfVl9dKIm8Ez4j#scrollTo=0knRYqfafPz9)
 
 ## 🚀 Features
 - **Single Image to 3D:** Generate hair strands from a single portrait.
