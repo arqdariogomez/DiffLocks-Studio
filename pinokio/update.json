@@ -4,14 +4,14 @@
       "method": "shell.run",
       "params": {
         "message": "git pull",
-        "path": "app"
+        "path": "."
       }
     },
     {
       "method": "shell.run",
       "params": {
         "venv": "venv",
-        "path": "app",
+        "path": ".",
         "message": "pip install -r requirements-pinokio.txt --upgrade"
       }
     },

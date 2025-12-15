@@ -3,7 +3,8 @@
     {
       "method": "shell.run",
       "params": {
-        "message": "git clone https://github.com/arqdariogomez/DiffLocks-Studio.git app",
+        "message": "pip install -r requirements-pinokio.txt",
+        "venv": "venv",
         "path": "."
       }
     },
@@ -13,33 +14,39 @@
         "uri": "torch.js",
         "params": {
           "venv": "venv",
-          "path": "app"
+          "path": "."
         }
       }
     },
     {
-      "method": "shell.run",
+      "method": "input",
       "params": {
-        "venv": "venv",
-        "path": "app",
-        "message": "pip install -r requirements-pinokio.txt"
+        "title": "HuggingFace Token",
+        "description": "Enter your HF Token to download checkpoints (Required for gated repos). Leave empty if public/already set.",
+        "form": [
+          {
+            "key": "HF_TOKEN",
+            "type": "password",
+            "placeholder": "hf_..."
+          }
+        ]
       }
     },
     {
       "method": "shell.run",
       "params": {
         "venv": "venv",
-        "path": "app",
+        "path": ".",
         "message": "python download_checkpoints.py",
         "env": {
-          "HF_TOKEN": "{{env.HF_TOKEN}}"
+          "HF_TOKEN": "{{input.HF_TOKEN}}"
         }
       }
     },
     {
       "method": "notify",
       "params": {
-        "html": "\u2705 DiffLocks Studio installed successfully!<br>Don't forget to set HF_TOKEN in Pinokio settings if you haven't already."
+        "html": "\u2705 DiffLocks Studio installed successfully!"
       }
     }
   ]

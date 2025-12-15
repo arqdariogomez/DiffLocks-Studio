@@ -9,6 +9,7 @@ module.exports = {
       }
     },
     {
+      // Lógica: Si gpu es nvidia, instala CUDA, sino CPU.
       method: "shell.run", 
       params: {
         venv: "{{args.venv}}",

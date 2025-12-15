@@ -5,7 +5,7 @@
       "method": "shell.run",
       "params": {
         "venv": "venv",
-        "path": "app",
+        "path": ".",
         "message": "python app.py",
         "on": [
           {

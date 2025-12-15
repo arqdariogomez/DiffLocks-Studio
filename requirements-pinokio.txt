@@ -1,5 +1,3 @@
-# DiffLocks Studio - Pinokio Requirements
-# PyTorch y NATTEN se instalan via torch.js según GPU/CPU
 
 numpy<2.0.0
 gradio==3.50.2
