@@ -22,7 +22,7 @@
       "method": "input",
       "params": {
         "title": "HuggingFace Token",
-        "description": "Enter your HF Token to download checkpoints (Required for gated repos). Leave empty if public/already set.",
+        "description": "Enter HF Token (Read) to download assets. Leave empty if public.",
         "form": [
           {
             "key": "HF_TOKEN",

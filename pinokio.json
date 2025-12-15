@@ -5,17 +5,17 @@
   "menu": [
     {
       "text": "Install",
-      "href": "pinokio/install.json",
+      "href": "install.json",
       "icon": "fa-solid fa-download"
     },
     {
       "text": "Start",
-      "href": "pinokio/start.json",
+      "href": "start.json",
       "icon": "fa-solid fa-play"
     },
     {
       "text": "Update",
-      "href": "pinokio/update.json",
+      "href": "update.json",
       "icon": "fa-solid fa-rotate"
     }
   ]
