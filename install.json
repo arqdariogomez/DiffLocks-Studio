@@ -46,7 +46,7 @@
     {
       "method": "notify",
       "params": {
-        "html": "\u2705 DiffLocks Studio installed successfully!"
+        "html": "\u2705 DiffLocks Studio installed successfully! Click 'Start' in the menu."
       }
     }
   ]

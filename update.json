@@ -18,7 +18,7 @@
     {
       "method": "notify",
       "params": {
-        "html": "\u2705 Updated!"
+        "html": "\u2705 DiffLocks Studio updated!"
       }
     }
   ]
