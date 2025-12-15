@@ -1,12 +1,22 @@
 {
   "title": "DiffLocks Studio",
-  "description": "AI Hair Generation",
+  "description": "AI-powered 3D hair generation from a single image",
   "icon": "icon.png",
   "menu": [
     {
-      "html": "Install",
+      "text": "Install",
       "href": "pinokio/install.json",
       "icon": "fa-solid fa-download"
+    },
+    {
+      "text": "Start",
+      "href": "pinokio/start.json",
+      "icon": "fa-solid fa-play"
+    },
+    {
+      "text": "Update",
+      "href": "pinokio/update.json",
+      "icon": "fa-solid fa-rotate"
     }
   ]
 }
