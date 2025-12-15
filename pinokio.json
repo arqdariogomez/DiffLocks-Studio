@@ -1,0 +1,12 @@
+{
+  "title": "DiffLocks Studio",
+  "description": "AI Hair Generation",
+  "icon": "icon.png",
+  "menu": [
+    {
+      "html": "Install",
+      "href": "pinokio/install.json",
+      "icon": "fa-solid fa-download"
+    }
+  ]
+}
