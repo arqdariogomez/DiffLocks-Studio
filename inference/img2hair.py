@@ -180,8 +180,7 @@ class DiffLocksInference():
 
             if not os.path.exists(self.paths['diff']):
                 print(f"ERROR: File not found: {self.paths['diff']}")
-            else:
-
+            
             try:
                 ckpt = torch.load(self.paths['diff'], map_location='cpu', weights_only=False)
             except AttributeError as e:
