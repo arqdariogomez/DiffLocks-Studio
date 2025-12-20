@@ -1,6 +1,12 @@
 {
   "run": [
     {
+      "method": "notify",
+      "params": {
+        "html": "🚀 Starting DiffLocks Studio installation..."
+      }
+    },
+    {
       "method": "shell.run",
       "params": {
         "message": "pip install -r requirements-pinokio.txt",
@@ -46,7 +52,7 @@
     {
       "method": "notify",
       "params": {
-        "html": "\u2705 DiffLocks Studio installed successfully! Click 'Start' in the menu."
+        "html": "✅ DiffLocks Studio installed successfully! Click 'Start' in the menu."
       }
     }
   ]

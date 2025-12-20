@@ -8,6 +8,44 @@ from torch.nn import functional as F
 import os
 from . import flags, flops
 
+def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
+    # Fallback implementation of Neighborhood Attention using Unfold
+    # q, k, v: [N, H, W, Heads, Dim]
+    N, H, W, Heads, Dim = q.shape
+    pad = (kernel_size // 2) * dilation
+    
+    q_p = q.permute(0, 3, 4, 1, 2) # [N, Heads, Dim, H, W]
+    k_p = k.permute(0, 3, 4, 1, 2)
+    v_p = v.permute(0, 3, 4, 1, 2)
+    
+    q_r = q_p.reshape(N*Heads, Dim, H, W)
+    k_r = k_p.reshape(N*Heads, Dim, H, W)
+    v_r = v_p.reshape(N*Heads, Dim, H, W)
+    
+    k_unf = F.unfold(k_r, kernel_size, dilation=dilation, padding=pad, stride=1) 
+    v_unf = F.unfold(v_r, kernel_size, dilation=dilation, padding=pad, stride=1)
+    
+    q_flat = q_r.reshape(N*Heads, Dim, H*W)
+    
+    k_windows = k_unf.reshape(N*Heads, Dim, kernel_size*kernel_size, H*W)
+    v_windows = v_unf.reshape(N*Heads, Dim, kernel_size*kernel_size, H*W)
+    
+    q_i = q_flat.permute(0, 2, 1).unsqueeze(2) # [B, L, 1, D]
+    k_i = k_windows.permute(0, 3, 1, 2)        # [B, L, D, K2]
+    v_i = v_windows.permute(0, 3, 2, 1)        # [B, L, K2, D]
+    
+    attn = torch.matmul(q_i, k_i) * scale
+    attn = attn.softmax(dim=-1)
+    
+    out = torch.matmul(attn, v_i)
+    
+    out = out.squeeze(2).permute(0, 2, 1) # [B, D, L]
+    out = out.reshape(N*Heads, Dim, H, W)
+    out = out.reshape(N, Heads, Dim, H, W).permute(0, 3, 4, 1, 2) # [N, H, W, Heads, Dim]
+    
+    return out
+
+
 try:
     import natten
     natten.use_kv_parallelism_in_fused_na(True)
@@ -346,8 +384,17 @@ class NeighborhoodSelfAttentionBlock(nn.Module):
         x = self.norm(x, cond)
         qkv = self.qkv_proj(x)
         if natten is None:
-            raise ModuleNotFoundError("natten is required for neighborhood attention")
-        if natten.has_fused_na():
+            # Fallback to PyTorch implementation
+            q, k, v = rearrange(qkv, "n h w (t nh e) -> t n h w nh e", t=3, e=self.d_head)
+            q, k = scale_for_cosine_sim(q, k, self.scale[:, None], 1e-6)
+            theta = self.pos_emb(pos)
+            q = apply_rotary_emb_(q, theta)
+            k = apply_rotary_emb_(k, theta)
+            # flops.op(flops.op_natten, q.shape, k.shape, v.shape, self.kernel_size) # Skip flops count
+            x = na2d_pytorch(q, k, v, self.kernel_size, scale=1.0)
+            x = rearrange(x, "n h w nh e -> n h w (nh e)")
+            
+        elif natten.has_fused_na():
             q, k, v = rearrange(qkv, "n h w (t nh e) -> t n h w nh e", t=3, e=self.d_head)
             q, k = scale_for_cosine_sim(q, k, self.scale[:, None], 1e-6)
             theta = self.pos_emb(pos)

@@ -216,6 +216,7 @@ class ImageTransformerDenoiserModelV2Conditional(nn.Module):
         return groups
 
     def forward(self, x, sigma, latents_dict=None, aug_cond=None, class_cond=None, mapping_cond=None, cross_cond=None, cam=None):
+        x = x.to(self.patch_in.proj.weight.dtype) # Force input to match model weights
         #get noise only embedding
         c_noise = torch.log(sigma) / 4
         time_emb = self.time_in_proj_only_t(self.time_emb(c_noise[..., None]))
@@ -228,32 +229,32 @@ class ImageTransformerDenoiserModelV2Conditional(nn.Module):
         with torch.no_grad():
             nr_batches = x.shape[0]
             rand=torch.rand((nr_batches), device=x.device) #rand between 0,1
-            cond_batches_to_drop=(rand<self.condition_dropout_rate)*1.0 #0.1 batches are set to true
-            cond_batches_to_keep = 1.0-cond_batches_to_drop #0.9 here are ones and 0.1 are set to zero
+            cond_batches_to_drop=(rand<self.condition_dropout_rate).to(x.dtype) #0.1 batches are set to true
+            cond_batches_to_keep = (1.0-cond_batches_to_drop).to(x.dtype) #0.9 here are ones and 0.1 are set to zero
             
             #gather here the local and global conditioning for each lvl, or make dummy values if we didn't provide anything and therefore we are doing unconditional generation
             global_cond=None
             locals_cond_list=[]
             if latents_dict is None:
-                global_cond=torch.zeros((1,self.rgb_condition_config["global_condition_shape"][1]*2), device=x.device)
+                global_cond=torch.zeros((1,self.rgb_condition_config["global_condition_shape"][1]*2), device=x.device, dtype=x.dtype)
                 for local_shape in self.rgb_condition_config["local_condition_shapes"]:
-                    locals_cond_list.append(torch.zeros(local_shape["shape"], device=x.device))
+                    locals_cond_list.append(torch.zeros(local_shape["shape"], device=x.device, dtype=x.dtype))
             else:
                 #populate with latents_dict
                 #global
                 dino_latent_mean=latents_dict["dinov2"]["final_latent"].mean(dim=[2,3])
                 dino_latent_cls=latents_dict["dinov2"]["cls_token"]
-                global_cond=torch.cat([dino_latent_mean,dino_latent_cls],1)
+                global_cond=torch.cat([dino_latent_mean,dino_latent_cls],1).to(x.dtype).to(x.dtype)
                 #locals
-                local=latents_dict["dinov2"]["final_latent"].contiguous() #needed otherwise ddp complains about gradients being not contiguous and that affects performance
+                local=latents_dict["dinov2"]["final_latent"].contiguous().to(x.dtype).to(x.dtype) #needed otherwise ddp complains about gradients being not contiguous and that affects performance
                 for local_shape in self.rgb_condition_config["local_condition_shapes"]:
                     locals_cond_list.append(local)
 
 
             #condition dropout
-            global_cond=global_cond*cond_batches_to_keep.view(nr_batches,1)
+            global_cond=(global_cond*cond_batches_to_keep.view(nr_batches,1)).to(x.dtype)
             for l_idx in range(len(locals_cond_list)):
-                locals_cond_list[l_idx]=locals_cond_list[l_idx]*cond_batches_to_keep.view(nr_batches,1,1,1)
+                locals_cond_list[l_idx]=(locals_cond_list[l_idx]*cond_batches_to_keep.view(nr_batches,1,1,1)).to(x.dtype)
 
             #make position embedding for the locals
             locals_pos_list=[]
@@ -265,7 +266,7 @@ class ImageTransformerDenoiserModelV2Conditional(nn.Module):
        
 
         #concat one to act as a bias
-        x = torch.cat([x, self.untied_bias.repeat(x.shape[0],1,1,1) ], dim=1)
+        x = torch.cat([x, self.untied_bias.repeat(x.shape[0],1,1,1).to(x.dtype) ], dim=1)
        
 
         # Patching
@@ -280,6 +281,7 @@ class ImageTransformerDenoiserModelV2Conditional(nn.Module):
         c_noise = torch.log(sigma) / 4
         time_emb = self.time_in_proj(self.time_emb(c_noise[..., None]))
         aug_cond = x.new_zeros([x.shape[0], 9]) if aug_cond is None else aug_cond
+        
         global_cond_embedded=self.global_latent_encoder(global_cond)
 
         embedding_summed=time_emb + global_cond_embedded

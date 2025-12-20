@@ -44,7 +44,7 @@ class Config:
         elif 'PINOKIO_HOME' in os.environ:
             platform = 'pinokio'
             work_dir = Path.cwd()
-            repo_dir = work_dir / "app"
+            repo_dir = work_dir # Fixed for flat structure
             blender_exe = work_dir / "blender" / ("blender.exe" if sys.platform == 'win32' else "blender")
             needs_share = False
         else:

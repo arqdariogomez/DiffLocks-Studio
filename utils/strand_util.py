@@ -558,6 +558,8 @@ def sample_strands_from_scalp_with_density(scalp_texture, density_map, strand_co
                                                       size=[scalp_texture.shape[2], scalp_texture.shape[3]])
 
     binary_map = sample_from_density_map(density_map)
+
+
     strand_mask_binary = binary_map
     strands_indices = torch.nonzero(strand_mask_binary)[:,
                       -2:]  # torch nonzero gives you a Nx4 matrices because the mask has 4 dimensions (NCHW) but we are only interested in the last 2 dimensions HW
@@ -622,9 +624,16 @@ def sample_strands_from_scalp_with_density(scalp_texture, density_map, strand_co
     # print("selected_latents", selected_latents.shape)
 
     # decode
+
+    # Guard against empty latents
+    if selected_latents.shape[0] == 0:
+        raise RuntimeError(f"No strands were sampled from density map! density_map sum was likely too low.")
+    
     selected_latents_chunked = torch.chunk(selected_latents, nr_chunks)
     pred_points_list = []
     for selected_latents_cur in selected_latents_chunked:
+        if selected_latents_cur.shape[0] == 0:
+            continue  # Skip empty chunks
         pred_dict = strand_codec.decoder(selected_latents_cur, None, normalization_dict)
         pred_points = pred_dict["strand_positions"]
         pred_points_list.append(pred_points)

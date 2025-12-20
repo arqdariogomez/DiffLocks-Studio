@@ -107,7 +107,16 @@ if cfg.platform == 'huggingface':
 from inference.img2hair import DiffLocksInference
 
 # Find checkpoints recursively
-ckpt_files = list(cfg.repo_dir.rglob("*diffusion*.pth")) or list(cfg.repo_dir.rglob("*.pth"))
+# Improved model search
+ckpt_files = list(cfg.repo_dir.rglob("scalp_*.pth"))
+if not ckpt_files:
+    # Fallback: try to find anything that looks like a model, excluding cache and dinov2
+    all_pths = list(cfg.repo_dir.rglob("*.pth"))
+    ckpt_files = [p for p in all_pths if "dinov2" not in p.name and "cache" not in str(p).lower()]
+    
+if not ckpt_files:
+    # Last resort fallback
+    ckpt_files = list(cfg.repo_dir.rglob("*.pth"))
 vae_files = list(cfg.repo_dir.rglob("strand_codec.pt"))
 conf_path = cfg.repo_dir / "configs/config_scalp_texture_conditional.json"
 
@@ -312,7 +321,13 @@ def export_blender(npz_path, output_base, formats):
     format_map = {'.blend': 'blend', '.abc': 'abc', '.usd': 'usd'}
     keys = [v for k, v in format_map.items() if any(v.lower() in f.lower() for f in formats)]
     
-    if not keys or not cfg.blender_exe.exists():
+    if not keys:
+        return []
+
+    if not cfg.blender_exe.exists():
+        if cfg.platform == 'pinokio' or sys.platform == 'win32':
+            print("⚠️ Blender not found. Skipping .blend/.abc/.usd export.")
+            print(f"To enable, install Blender 4.2+ and place it at: {cfg.blender_exe}")
         return []
     
     script = cfg.repo_dir / "inference/converter_blender.py"

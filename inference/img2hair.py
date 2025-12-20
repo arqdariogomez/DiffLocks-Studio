@@ -176,27 +176,49 @@ class DiffLocksInference():
             yield "log", "⏳ Cargando modelo de difusión..."
             conf = K.config.load_config(self.paths['config'])
             model = K.config.make_denoiser_wrapper(conf)(K.config.make_model(conf).to("cuda" if torch.cuda.is_available() else "cpu"))
-            ckpt = torch.load(self.paths['diff'], map_location='cpu', weights_only=False)
+            # DEBUG PATCH
+
+            if not os.path.exists(self.paths['diff']):
+                print(f"ERROR: File not found: {self.paths['diff']}")
+            else:
+
+            try:
+                ckpt = torch.load(self.paths['diff'], map_location='cpu', weights_only=False)
+            except AttributeError as e:
+                if "'NoneType' object has no attribute 'seek'" in str(e):
+                    print("CRITICAL ERROR: torch.load failed with NoneType seek error.")
+                    print("This usually means the file is corrupted or empty.")
+                    # Try to delete it so it redownloads?
+                    # os.remove(self.paths['diff'])
+                    raise RuntimeError(f"Model file corrupted: {self.paths['diff']}. Please delete it and restart to redownload.") from e
+                raise e
+            # END DEBUG PATCH
             model.inner_model.load_state_dict(ckpt['model_ema'])
+            if torch.cuda.is_available(): model.half() # Optimize VRAM
             del ckpt; force_cleanup()
             model.eval(); model.inner_model.condition_dropout_rate = 0.0
             
-            extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu"), "final_latent": patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu")}}}
+            extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu").half(), "final_latent": patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu").half()}}}
             
             yield "log", "🎨 Iniciando muestreo (Sampling)... Esto tomará unos minutos."
             # Sampling (Sin autocast para igualar referencia)
             scalp = sample_images_cfg(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra)
             
-            scalp_cpu = scalp.cpu().clone()
+            # CRITICAL: Convert to float32 for decoder compatibility
+            scalp_cpu = scalp.cpu().float().clone()
             sigma_data = conf['model']["sigma_data"]
             del model, scalp, extra, conf; force_cleanup()
             
             density = (scalp_cpu[:,-1:]*(0.5/sigma_data)+0.5).clamp(0,1)
             density[density<0.02] = 0.0
+            
+            # Debug logging for density map
+
+
             if density.sum() == 0: 
                 yield "error", "El modelo generó un mapa de densidad vacío."
                 return
-            yield "log", "✅ Textura neural generada"
+            yield "log", f"✅ Textura neural generada (density sum: {density.sum():.1f})"
             
             # 4. DECODING
             yield "status", "🧬 4/5: Decodificando en 3D (CPU)..."
@@ -205,8 +227,14 @@ class DiffLocksInference():
             codec.eval()
             
             yield "log", f"⏳ Procesando {self.nr_chunks_decode_strands} chunks de geometría..."
+            
+            # Ensure float32 for decoder
+            scalp_texture = scalp_cpu[:,0:-1].float()
+            density_f32 = density.float()
+
+
             strands, _ = sample_strands_from_scalp_with_density(
-                scalp_cpu[:,0:-1], density, codec, self.norm_dict_cpu, 
+                scalp_texture, density_f32, codec, self.norm_dict_cpu, 
                 self.mesh_data_cpu, self.tbn_space_to_world, self.nr_chunks_decode_strands)
             
             del codec, scalp_cpu, density; force_cleanup()
