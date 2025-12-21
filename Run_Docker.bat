@@ -13,20 +13,35 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Check for checkpoints
-set "CHECKPOINT_FILE=checkpoints\scalp_diffusion.pth"
+:: Check for checkpoints (Flexible search)
+set "FOUND_CKPT="
+if exist "checkpoints" (
+    for /f "delims=" %%i in ('dir /s /b "checkpoints\scalp_*.pth" 2^>nul') do (
+        set "FOUND_CKPT=%%i"
+    )
+)
+
 set "ZIP_FILE=difflocks_checkpoints.zip"
 
-if not exist "%CHECKPOINT_FILE%" (
+if not defined FOUND_CKPT (
     if exist "%ZIP_FILE%" (
         echo 📦 Found %ZIP_FILE%. Unzipping...
         powershell -Command "Expand-Archive -Path '%ZIP_FILE%' -DestinationPath '.' -Force"
         
-        :: Handle case where zip contains a 'checkpoints' folder or just files
-        if not exist "checkpoints" mkdir checkpoints
-        if exist "scalp_diffusion.pth" move "scalp_diffusion.pth" "checkpoints\"
-        if exist "strand_vae" move "strand_vae" "checkpoints\"
+        :: Re-check after unzip
+        for /f "delims=" %%i in ('dir /s /b "checkpoints\scalp_*.pth" 2^>nul') do (
+            set "FOUND_CKPT=%%i"
+        )
         
+        if not defined FOUND_CKPT (
+            :: Handle case where zip doesn't have a 'checkpoints' folder
+            if exist "scalp_*.pth" (
+                if not exist "checkpoints" mkdir checkpoints
+                move "scalp_*.pth" "checkpoints\"
+                if exist "strand_vae" move "strand_vae" "checkpoints\"
+                set "FOUND_CKPT=checkpoints\found"
+            )
+        )
         echo ✅ Unzipped successfully.
     ) else (
         echo ❌ Error: Checkpoints not found!
