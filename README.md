@@ -1,81 +1,30 @@
----
-title: DiffLocks Studio
-emoji: 💇‍♀️
-colorFrom: purple
-colorTo: pink
-sdk: gradio
-sdk_version: 3.50.2
-app_file: app.py
-pinned: false
-license: other
----
+# DiffLocks Studio (Universal V2)
 
-# 💇‍♀️ DiffLocks Studio
-
-**High-Fidelity 3D Hair Generation from Single Images**
-
-[![Kaggle](https://img.shields.io/badge/Kaggle-Notebook-blue?logo=kaggle)](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal)
-[![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a)
-[![Original Repo](https://img.shields.io/badge/Original-Meshcapade-blue)](https://github.com/Meshcapade/difflocks)
-[![HuggingFace Space](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Space-yellow)](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio)
-
-## 🌟 About this Project
-
-This repository is a modification of **DiffLocks**, the original project by **Meshcapade GmbH** and the **Max Planck Institute for Intelligent Systems**.
-
-### 🎯 Our Mission: Democratization
-The primary goal of **DiffLocks Studio** is to democratize access to this cutting-edge technology. We have optimized the original code to run on consumer-grade hardware (such as an 8GB GPU) and accessible platforms like **Pinokio**, removing the entry barrier of requiring high-performance workstations.
+AI-powered 3D hair generation from a single image. This project provides a unified interface for Pinokio, Docker, Kaggle, Colab, and local environments.
 
 ---
 
-## ⚖️ Attribution and License
+## 🚀 Getting Started (Choose your platform)
 
-> [!IMPORTANT]
-> **Original Credit**: All credit for the model architecture, data, and research belongs to **Meshcapade GmbH** and its authors (Rosu et al., CVPR 2025).
-
-- **License**: This project directly inherits the license from [Meshcapade/difflocks](https://github.com/Meshcapade/difflocks). It is for **Non-Commercial Scientific Research Use Only**.
-- **Citation**: If you use this work in your research, please cite the original paper:
-  ```bibtex
-  @inproceedings{difflocks2025,
-    title = {DiffLocks: Generating 3D Hair from a Single Image using Diffusion Models},
-    author = {Rosu, Radu Alexandru and Wu, Keyu and Feng, Yao and Zheng, Youyi and Black, Michael J.},
-    booktitle = {Proceedings IEEE Conf. on Computer Vision and Pattern Recognition (CVPR)},
-    year = {2025}
-  }
-  ```
-
----
-
-## 🚀 Getting Started (Recommended Order)
-
-1. **Kaggle (Highly Recommended)**: [Kaggle Notebook](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal). 
-   - **Why?** It provides the most stable environment and generous GPU hours.
-   - **Note**: Colab is currently being refined for 100% stability.
-2. **Pinokio (Local)**: One-click installer for Windows/Mac/Linux.
-   - Ensure you have the latest version of [Pinokio](https://pinokio.computer).
-   - Go to the **Discover** section.
-   - Click on **Add from URL**.
-   - Paste this repository URL and hit **Enter**.
-   - **Tip**: When the console says the app is ready at `0.0.0.0`, use [http://localhost:7860/](http://localhost:7860/) in your browser for the best compatibility.
-3. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). 
-   - **Note**: This is a great "try-it-now" option, but it depends on ZeroGPU grant availability. If not available, it will be slow or queued.
+| Platform | Best For | Setup Speed | GPU Required | Link |
+| :--- | :--- | :--- | :--- | :--- |
+| **Pinokio** | One-click local install | ⚡ Fast | Yes (NVIDIA) | [Install via Pinokio](https://pinokio.computer) |
+| **Docker** | Local power users | ⚡⚡ Very Fast | Yes (NVIDIA) | [See Instructions Below](#-docker-deployment-easiest-for-local) |
+| **Kaggle** | Free GPU (30h/week) | 🐢 Slow | No (Cloud) | [Open in Kaggle](https://www.kaggle.com/code/arqdariogomez/difflocks-v6d) |
+| **Colab** | Free/Paid GPU | 🐢 Slow | No (Cloud) | [Open in Colab](https://colab.research.google.com/github/arqdariogomez/DiffLocks-Studio/blob/main/Difflocks_v6d.ipynb) |
 
 ---
 
 ## 🧠 Model Setup (Checkpoints)
 
-Due to licensing restrictions, model weights are not included in this repository. You must set them up manually.
+Due to the **Non-Commercial Scientific Research Use Only** license, checkpoints must be downloaded manually from the official source.
 
 ### 📥 Step 1: Manual Download
-1. Download the checkpoints from the [original Meshcapade repository](https://github.com/Meshcapade/difflocks).
-2. Create a `checkpoints` folder in the project root.
-3. Place the files in this exact structure:
-   ```
-   checkpoints/
-   ├── scalp_diffusion.pth
-   └── strand_vae/
-       └── strand_codec.pt
-   ```
+1. Register/Login at [difflocks.is.tue.mpg.de](https://difflocks.is.tue.mpg.de/).
+2. Download [**difflocks_checkpoints.zip**](https://download.is.tue.mpg.de/download.php?domain=difflocks&sfile=difflocks_checkpoints.zip).
+3. **Pinokio**: Place the `.zip` in `C:\pinokio\api\DiffLocks-Studio`.
+4. **Docker**: Place the `.zip` in your project folder.
+5. **Kaggle/Colab**: Upload to your drive or use the provided download cells.
 
 ### 🔐 Step 2: Using "Secrets" (Kaggle / Colab)
 Even with manual setup, using the **Secrets** add-on is the best practice for privacy and license compliance. It allows the app to securely download required assets (like Face Landmarkers) without exposing your keys.

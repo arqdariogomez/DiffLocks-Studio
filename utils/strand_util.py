@@ -651,4 +651,3 @@ def sample_strands_from_scalp_with_density(scalp_texture, density_map, strand_co
     strand_points_world = tbn_space_to_world_func(root_uv01.cpu(), strand_points_tbn, scalp_mesh_data)
 
     return strand_points_world, strand_points_tbn
-

@@ -186,6 +186,22 @@ def render_debug_console(logs_list):
         lines_html.append(f'<div style="color: {color}; margin: 2px 0;">{escaped}</div>')
     return f'<div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.5; max-height: 400px; overflow-y: auto;">{"".join(lines_html)}</div>'
 
+def render_image_html(image_path, title="2D Preview"):
+    if not image_path or not Path(image_path).exists():
+        return f'''
+        <div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 40px; text-align: center; color: #a1a1aa; font-size: 14px;">
+            <div style="font-size: 48px; margin-bottom: 10px;">🖼️</div>
+            <div>No preview available</div>
+        </div>
+        '''
+    with open(image_path, "rb") as f:
+        img_data = base64.b64encode(f.read()).decode('utf-8')
+    return f'''
+    <div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 12px; text-align: center;">
+        <img src="data:image/png;base64,{img_data}" style="max-width: 100%; height: auto; border-radius: 6px;" alt="{title}"/>
+    </div>
+    '''
+
 def create_dual_progress_html(total_pct, total_rem, step_name, step_pct, step_rem, status_type="info"):
     colors = {"info": "#818cf8", "success": "#34d399", "error": "#f87171", "warning": "#fbbf24"}
     main_color = colors.get(status_type, "#818cf8")
@@ -266,37 +282,65 @@ def load_model():
 
 # --- 6. UTILITY FUNCTIONS ---
 
-def generate_preview_2d(npz_path, output_dir):
+def generate_preview_2d(npz_path, output_dir, log_capture=None):
     try:
         import matplotlib.pyplot as plt
-        data = np.load(npz_path)['positions']
-        step = max(1, len(data) // 20000)
-        pts = data[::step].reshape(-1, 3)
-        x, y, z = pts[:, 0], -pts[:, 2], pts[:, 1]
+        data = np.load(npz_path)
+        positions = data['positions']
+        n_strands = positions.shape[0]
+        step = max(1, n_strands // 20000)
+        pts = positions.reshape(-1, 3)
+        x, y, z = pts[:, 0], pts[:, 1], pts[:, 2]
+        
+        # Rotate to match Kaggle view
+        rx, ry, rz = x, z, y
+        theta = np.radians(180)
+        c, s = np.cos(theta), np.sin(theta)
+        final_x = rx * c + ry * s
+        final_y = -rx * s + ry * c
+        final_z = rz
+        
+        rotated = np.stack([final_x, final_y, final_z], axis=1).reshape(n_strands, -1, 3)
+        subset = rotated[::step, ::3, :]
+        sx = subset[:, :, 0].flatten()
+        sy = subset[:, :, 1].flatten()
+        sz = subset[:, :, 2].flatten()
+        
+        mask = np.abs(sz) > 0.001
+        sx, sy, sz = sx[mask], sy[mask], sz[mask]
+        
         plt.style.use('dark_background')
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-        fig.patch.set_facecolor('#111')
-        views = [(x, z, y, 'FRONT'), (y, z, np.abs(x), 'SIDE'), (x, y, z, 'TOP')]
-        for ax, (u, v, depth, title) in zip(axes, views):
-            idx = np.argsort(depth)
-            norm_depth = (depth[idx] - depth.min()) / (depth.max() - depth.min() + 1e-8)
-            ax.scatter(u[idx], v[idx], c=norm_depth, cmap='copper', s=0.5, lw=0)
-            ax.axis('off')
-            ax.set_title(title, color='#888', fontsize=14)
-        preview_path = output_dir / "preview.png"
-        fig.savefig(preview_path, facecolor='#111', bbox_inches='tight', dpi=100)
+        fig = plt.figure(figsize=(10, 10), facecolor='#18181b')
+        ax = fig.add_subplot(111)
+        ax.set_facecolor('#18181b')
+        
+        idx = np.argsort(sy)
+        d_min, d_max = sy.min(), sy.max()
+        depth_norm = (sy[idx] - d_min) / (d_max - d_min + 1e-8)
+        
+        ax.scatter(sx[idx], sz[idx], c=depth_norm, cmap='copper', s=0.5, alpha=0.7, linewidths=0)
+        ax.axis('off')
+        ax.set_aspect('equal')
+        
+        plt.tight_layout(pad=0)
+        preview_path = Path(output_dir) / "preview_2d.png"
+        fig.savefig(preview_path, facecolor='#18181b', bbox_inches='tight', dpi=120, pad_inches=0.1)
         plt.close(fig)
+        
+        del positions, pts, rotated, subset
+        gc.collect()
         return str(preview_path)
-    except: return None
+    except Exception as e:
+        if log_capture: log_capture.add_log(f"❌ 2D Preview error: {e}")
+        return None
 
-def generate_preview_3d(npz_path):
+def generate_preview_3d(npz_path, log_capture=None):
     try:
         import plotly.graph_objects as go
         data = np.load(npz_path)
         positions = data['positions']
         num_strands, points_per_strand, _ = positions.shape
         
-        # Downsample for performance
         target_strands = max(100, num_strands // 2)
         strand_step = max(1, num_strands // target_strands)
         target_points = 32
@@ -309,7 +353,6 @@ def generate_preview_3d(npz_path):
         y = -subset[:, :, 2]
         z = subset[:, :, 1]
         
-        # Rotate 180
         theta = np.radians(180)
         c, s = np.cos(theta), np.sin(theta)
         fx = x * c + y * s
@@ -321,7 +364,6 @@ def generate_preview_3d(npz_path):
         y_plot = np.hstack([fy, nan_col]).flatten()
         z_plot = np.hstack([fz, nan_col]).flatten()
         
-        # Build colors to match points + NaNs
         np.random.seed(42)
         colors_flat = []
         for s_idx in range(n_s):
@@ -331,8 +373,9 @@ def generate_preview_3d(npz_path):
                 base_val = 0.2 + t * 0.75
                 val = np.clip(base_val * brightness_var, 0.1, 1.0)
                 colors_flat.append(val)
-            colors_flat.append(0.5) # Color for NaN point (won't be seen)
+            colors_flat.append(0.5)
         
+        color_array = np.array(colors_flat)
         colorscale = [
             [0.0, 'rgb(30,30,30)'],
             [0.2, 'rgb(60,60,60)'],
@@ -345,7 +388,7 @@ def generate_preview_3d(npz_path):
         fig = go.Figure(data=[go.Scatter3d(
             x=x_plot, y=y_plot, z=z_plot,
             mode='lines',
-            line=dict(width=2, color=colors_flat, colorscale=colorscale, showscale=False),
+            line=dict(width=2, color=color_array, colorscale=colorscale, showscale=False),
             hoverinfo='none'
         )])
         
@@ -365,38 +408,98 @@ def generate_preview_3d(npz_path):
             height=550,
             showlegend=False
         )
+        del positions, subset, x, y, z, fx, fy, fz, x_plot, y_plot, z_plot, color_array
+        gc.collect()
         return fig
     except Exception as e:
-        print(f"3D Preview Error: {e}")
+        if log_capture: log_capture.add_log(f"❌ 3D Preview error: {e}")
         return None
 
-def export_obj(npz_path, obj_path):
-    try:
-        data = np.load(npz_path); pos = data['positions']; points_per_strand = 100
-        with open(obj_path, 'w') as f:
-            for p in pos: f.write(f"v {p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
-            num_strands = len(pos) // points_per_strand
-            for s in range(num_strands):
-                start_idx = s * points_per_strand + 1
-                indices = range(start_idx, start_idx + points_per_strand)
-                f.write("l " + " ".join(map(str, indices)) + "\n")
-        return True
-    except: return False
+def create_empty_3d_plot():
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        scene=dict(
+            bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(visible=False, showgrid=False, showbackground=False),
+            yaxis=dict(visible=False, showgrid=False, showbackground=False),
+            zaxis=dict(visible=False, showgrid=False, showbackground=False),
+        ),
+        margin=dict(l=0, r=0, b=0, t=0),
+        height=550,
+        annotations=[dict(
+            text="🎨 3D Preview will appear here after generation",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False,
+            font=dict(size=14, color="#a1a1aa")
+        )]
+    )
+    return fig
 
-def export_blender(npz_path, output_base, formats):
+def export_obj(npz_path, obj_path, log_capture=None):
+    try:
+        data = np.load(npz_path)
+        positions = data['positions']
+        num_strands, points_per_strand, _ = positions.shape
+        with open(obj_path, 'w', buffering=4*1024*1024) as f:
+            f.write(f"# DiffLocks Hair Export\n# Strands: {num_strands}, Points: {points_per_strand}\n\n")
+            chunk_size = 5000
+            for i in range(0, num_strands, chunk_size):
+                end_idx = min(i + chunk_size, num_strands)
+                chunk = positions[i:end_idx]
+                flat = chunk.reshape(-1, 3)
+                lines = "\n".join(f"v {p[0]:.6f} {p[1]:.6f} {p[2]:.6f}" for p in flat)
+                f.write(lines + "\n")
+            f.write("\n# Polylines\n")
+            for i in range(0, num_strands, chunk_size):
+                end_idx = min(i + chunk_size, num_strands)
+                lines = []
+                for s in range(i, end_idx):
+                    start = s * points_per_strand + 1
+                    indices = " ".join(map(str, range(start, start + points_per_strand)))
+                    lines.append(f"l {indices}")
+                f.write("\n".join(lines) + "\n")
+        del positions
+        gc.collect()
+        return True
+    except Exception as e:
+        if log_capture: log_capture.add_log(f"❌ OBJ error: {e}")
+        return False
+
+def export_blender(npz_path, job_dir, formats, log_capture):
     format_map = {'.blend': 'blend', '.abc': 'abc', '.usd': 'usd'}
     keys = [v for k, v in format_map.items() if any(v.lower() in f.lower() for f in formats)]
-    if not keys or not cfg.blender_exe.exists(): return []
+    if not keys:
+        log_capture.add_log("⚠️ No Blender formats selected")
+        return []
+    if not cfg.blender_exe.exists():
+        log_capture.add_log(f"❌ Blender not found: {cfg.blender_exe}")
+        return []
     script = cfg.repo_dir / "inference/converter_blender.py"
+    output_base = job_dir / "hair"
     cmd = [str(cfg.blender_exe), "-b", "-P", str(script), "--", str(npz_path), str(output_base)] + keys
+    log_capture.add_log(f"🟧 Starting Blender export: {keys}")
     try:
-        subprocess.run(cmd, capture_output=True, timeout=600)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate(timeout=300)
+        if stdout:
+            for line in stdout.strip().split('\n')[-10:]:
+                if line.strip(): log_capture.add_log(f"[Blender] {line.strip()}")
+        if stderr:
+            for line in stderr.strip().split('\n')[-5:]:
+                if line.strip() and "warning" not in line.lower(): log_capture.add_log(f"[Blender ERR] {line.strip()}")
         outputs = []
         for ext in ['.blend', '.abc', '.usd']:
             path = Path(f"{output_base}{ext}")
             if path.exists(): outputs.append(str(path))
+        if not outputs: log_capture.add_log("⚠️ No Blender files were created")
         return outputs
-    except: return []
+    except Exception as e:
+        log_capture.add_log(f"❌ Blender exception: {e}")
+        return []
 
 # --- 7. MAIN INFERENCE FUNCTION ---
 
@@ -417,7 +520,13 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         
         # Phase: Init
         tracker.set_phase("init")
-        yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()), generate_btn: gr.Button(interactive=False) }
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()), 
+            debug_console: render_debug_console(log_capture.get_logs()), 
+            generate_btn: gr.Button(interactive=False),
+            plot_3d: create_empty_3d_plot(),
+            preview_2d: render_image_html(None)
+        }
         
         # Load model
         load_model()
@@ -449,35 +558,37 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         # Previews & Exports
         tracker.set_phase("preview_2d")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
-        preview_img = generate_preview_2d(npz_path, job_dir)
+        preview_img_path = generate_preview_2d(npz_path, job_dir, log_capture)
+        preview_2d_html = render_image_html(preview_img_path)
         
         tracker.set_phase("preview_3d")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
-        plot_3d_fig = generate_preview_3d(npz_path)
+        plot_3d_fig = generate_preview_3d(npz_path, log_capture)
+        if plot_3d_fig is None: plot_3d_fig = create_empty_3d_plot()
         
         tracker.set_phase("obj_export")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
         obj_path = job_dir / "hair.obj"
-        export_obj(npz_path, obj_path)
+        export_obj(npz_path, obj_path, log_capture)
         
         tracker.set_phase("blender")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
-        blender_outputs = export_blender(npz_path, job_dir / "hair", export_formats)
+        blender_outputs = export_blender(npz_path, job_dir, export_formats, log_capture)
         
         tracker.set_phase("zip")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
         zip_path = job_dir / "DiffLocks_Results.zip"
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for f in [str(npz_path), preview_img, str(obj_path)] + blender_outputs:
+            for f in [str(npz_path), preview_img_path, str(obj_path)] + blender_outputs:
                 if f and Path(f).exists(): zf.write(f, Path(f).name)
         
         # Final yield with all files
-        final_files = [str(zip_path), str(npz_path), preview_img, str(obj_path)] + blender_outputs
+        final_files = [str(zip_path), str(npz_path), preview_img_path, str(obj_path)] + blender_outputs
         final_files = [f for f in final_files if f and Path(f).exists()]
         
         yield {
             plot_3d: plot_3d_fig,
-            preview_2d: preview_img,
+            preview_2d: preview_2d_html,
             status_html: create_complete_html(),
             result_group: gr.Group(visible=True),
             download_file: final_files,
@@ -574,6 +685,25 @@ footer { display: none !important; }
 ::-webkit-scrollbar-thumb { background: #52525b; border-radius: 4px; }
 """
 
+js_func = """
+function() {
+    document.body.classList.add('dark');
+    setInterval(() => {
+        document.querySelectorAll('.generating, .loading, .pending').forEach(el => {
+            el.style.animation = 'none';
+            el.style.opacity = '1';
+        });
+        document.querySelectorAll('.gr-checkbox-group label, .gr-checkbox-group span').forEach(el => {
+            el.style.color = '#e4e4e7';
+            el.style.backgroundColor = 'transparent';
+        });
+        document.querySelectorAll('.gr-accordion, .gr-accordion summary, details, details summary').forEach(el => {
+            el.style.color = '#e4e4e7';
+        });
+    }, 300);
+}
+"""
+
 dark_theme = gr.themes.Base(
     primary_hue=gr.themes.colors.indigo,
     secondary_hue=gr.themes.colors.zinc,
@@ -615,7 +745,7 @@ dark_theme = gr.themes.Base(
     border_color_primary_dark="#3f3f46",
 )
 
-with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio") as demo:
+with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) as demo:
     gr.Markdown("## 💇‍♀️ DiffLocks Studio")
     
     with gr.Row():
@@ -629,8 +759,8 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio") as demo:
             status_html = gr.HTML(value=create_dual_progress_html(0, 0, "⏳ Ready", 0, 0))
             with gr.Group(visible=False) as result_group:
                 with gr.Tabs():
-                    with gr.Tab("🎨 3D Preview"): plot_3d = gr.Plot()
-                    with gr.Tab("📸 2D Renders"): preview_2d = gr.Image(interactive=False)
+                    with gr.Tab("🎨 3D Interactive preview"): plot_3d = gr.Plot(value=create_empty_3d_plot())
+                    with gr.Tab("📸 2D Preview"): preview_2d = gr.HTML(value=render_image_html(None))
                 download_file = gr.File(label="📥 Download Results", file_count="multiple")
             with gr.Accordion("🛠️ Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))
