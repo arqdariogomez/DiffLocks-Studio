@@ -101,9 +101,27 @@ Even with manual setup, using the **Secrets** add-on is the best practice for pr
 
 ---
 
-## 🐳 Docker Deployment
+## 🐳 Docker Deployment (Easiest for Local)
 
-To run with Docker and NVIDIA GPU support:
-1. Install Docker and NVIDIA Container Toolkit.
-2. Run: `docker-compose up --build`
-3. Open `http://localhost:7860`.
+This is the recommended method for running locally with full control.
+
+### 1. Get the Code
+- Click the green **Code** button at the top of this page.
+- Select **Download ZIP** and extract it to a folder of your choice.
+- *Alternative*: `git clone https://github.com/arqdariogomez/DiffLocks-Studio.git`
+
+### 2. Get the Checkpoints (Mandatory)
+Due to licensing, you must download the weights from the official source:
+1. Register/Login at [difflocks.is.tue.mpg.de](https://difflocks.is.tue.mpg.de/).
+2. Go to the **Download** section.
+3. Download [**difflocks_checkpoints.zip**](https://download.is.tue.mpg.de/download.php?domain=difflocks&sfile=difflocks_checkpoints.zip).
+4. **Important**: Place the `difflocks_checkpoints.zip` file directly into the project folder (where `Run_Docker.bat` is).
+
+### 3. Launch
+1. Ensure [Docker Desktop](https://www.docker.com/) is running.
+2. Double-click **`Run_Docker.bat`**.
+3. The script will automatically unzip the checkpoints and start the server.
+4. Open [**http://localhost:7860**](http://localhost:7860) in your browser.
+
+> [!TIP]
+> If you have an NVIDIA GPU, make sure to install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) to enable GPU acceleration.

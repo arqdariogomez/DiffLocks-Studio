@@ -13,6 +13,35 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Check for checkpoints
+set "CHECKPOINT_FILE=checkpoints\scalp_diffusion.pth"
+set "ZIP_FILE=difflocks_checkpoints.zip"
+
+if not exist "%CHECKPOINT_FILE%" (
+    if exist "%ZIP_FILE%" (
+        echo 📦 Found %ZIP_FILE%. Unzipping...
+        powershell -Command "Expand-Archive -Path '%ZIP_FILE%' -DestinationPath '.' -Force"
+        
+        :: Handle case where zip contains a 'checkpoints' folder or just files
+        if not exist "checkpoints" mkdir checkpoints
+        if exist "scalp_diffusion.pth" move "scalp_diffusion.pth" "checkpoints\"
+        if exist "strand_vae" move "strand_vae" "checkpoints\"
+        
+        echo ✅ Unzipped successfully.
+    ) else (
+        echo ❌ Error: Checkpoints not found!
+        echo.
+        echo 📥 How to fix:
+        echo 1. Register/Login at https://difflocks.is.tue.mpg.de/
+        echo 2. Download 'difflocks_checkpoints.zip'
+        echo 3. Place the .zip file in THIS folder: %cd%
+        echo 4. Run this .bat again.
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
 :: Check for NVIDIA Container Toolkit (Optional but recommended for GPU)
 docker info | findstr /C:"Runtimes: nvidia" >nul
 if %errorlevel% neq 0 (
@@ -20,15 +49,6 @@ if %errorlevel% neq 0 (
     echo If you have an NVIDIA GPU, please install it for 100x faster generation.
     echo Running in CPU mode by default...
     echo.
-)
-
-:: Check for checkpoints
-if not exist "checkpoints\scalp_diffusion.pth" (
-    echo ❌ Error: Checkpoints not found!
-    echo Please download them manually and place them in the 'checkpoints' folder.
-    echo Refer to README.md for instructions.
-    pause
-    exit /b 1
 )
 
 echo 🚀 Starting Docker containers...
