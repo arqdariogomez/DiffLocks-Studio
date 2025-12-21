@@ -57,14 +57,22 @@ if not defined FOUND_CKPT (
     )
 )
 
-:: Check for NVIDIA Container Toolkit (Optional but recommended for GPU)
-docker info | findstr /C:"Runtimes: nvidia" >nul
+:: Check for GPU support (More robust check for Windows)
+echo 🔍 Checking for GPU support...
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ⚠️  Warning: NVIDIA Container Toolkit not detected. 
-    echo If you have an NVIDIA GPU, please install it for 100x faster generation.
-    echo Running in CPU mode by default...
+    echo ⚠️  Warning: GPU support not detected in Docker.
     echo.
+    echo 💡 To enable GPU (NVIDIA):
+    echo 1. Run 'wsl --update' in PowerShell.
+    echo 2. Ensure 'Use the WSL 2 based engine' is enabled in Docker Desktop Settings.
+    echo 3. Restart Docker Desktop.
+    echo.
+    echo Running in CPU mode...
+) else (
+    echo ✅ GPU support detected!
 )
+echo.
 
 echo 🚀 Starting Docker containers...
 echo 🌐 Once ready, open http://localhost:7860 in your browser.

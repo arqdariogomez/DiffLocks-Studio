@@ -123,5 +123,9 @@ Due to licensing, you must download the weights from the official source:
 3. The script will automatically unzip the checkpoints and start the server.
 4. Open [**http://localhost:7860**](http://localhost:7860) in your browser.
 
-> [!TIP]
-> If you have an NVIDIA GPU, make sure to install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) to enable GPU acceleration.
+### 4. GPU Support (NVIDIA)
+To enable GPU acceleration on Windows:
+1. Ensure you have the latest [NVIDIA Drivers](https://www.nvidia.com/Download/index.aspx).
+2. Run `wsl --update` in PowerShell to ensure WSL2 is up to date.
+3. In Docker Desktop Settings, ensure **"Use the WSL 2 based engine"** is enabled.
+4. The `Run_Docker.bat` script will automatically verify GPU access on startup.
