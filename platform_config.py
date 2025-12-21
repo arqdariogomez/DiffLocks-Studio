@@ -25,7 +25,7 @@ class Config:
 
     @staticmethod
     def detect() -> 'Config':
-        # ... (detección de plataforma igual) ...
+        # ... (platform detection logic) ...
         if Path("/kaggle").exists():
             platform = 'kaggle'
             work_dir = Path("/kaggle/working")
@@ -65,7 +65,7 @@ class Config:
             has_gpu = torch.cuda.is_available()
             if has_gpu:
                 vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-                # Usar float16 si < 12GB VRAM o si estamos en HuggingFace (estándar)
+                # Use float16 if < 12GB VRAM or if on HuggingFace (standard)
                 use_half = vram_gb < 12 or platform == 'huggingface'
         except: pass
 

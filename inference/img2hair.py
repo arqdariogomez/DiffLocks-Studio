@@ -139,15 +139,15 @@ class DiffLocksInference():
         actual_cfg = cfg_val if cfg_val is not None else self.cfg_val
         
         # LOG INICIAL
-        yield "log", f"⚙️ Configuración: CFG={actual_cfg} | Steps={self.nr_iters_denoise}"
+        yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise}"
 
         try:
             # 1. GEOMETRY
-            yield "status", "👤 1/5: Detectando Rostro y Geometría..."
+            yield "status", "👤 1/5: Detecting Face and Geometry..."
             frame = (rgb_img.permute(0,2,3,1).squeeze(0)*255).byte().cpu().numpy()
             _, lms = self.mediapipe_img.run(frame)
             if not lms: 
-                yield "error", "No se detectó ningún rostro en la imagen."
+                yield "error", "No face detected in the image."
                 return
             
             cropped_face = crop_face(frame, lms, 770)
@@ -157,7 +157,7 @@ class DiffLocksInference():
             yield "log", "✅ Rostro detectado y recortado (Zoom 2.8x)"
             
             # 2. DINO
-            yield "status", "🦖 2/5: Extrayendo Características (DINOv2)..."
+            yield "status", "🦖 2/5: Extracting Features (DINOv2)..."
             dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', verbose=False).to("cuda" if torch.cuda.is_available() else "cpu")
             tf = T.Compose([T.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
             out = dinov2.forward_features(tf(rgb_img_gpu))
@@ -170,11 +170,11 @@ class DiffLocksInference():
             cls_tok_cpu = cls_tok.cpu().clone()
             del dinov2, out, patch, cls_tok, patch_emb, rgb_img_gpu
             force_cleanup()
-            yield "log", "✅ Embeddings generados con éxito"
+            yield "log", "✅ Embeddings generated successfully"
             
             # 3. DIFFUSION
-            yield "status", "🌫️ 3/5: Difusión (Generando Pelo)..."
-            yield "log", "⏳ Cargando modelo de difusión..."
+            yield "status", "🌫️ 3/5: Diffusion (Generating Hair)..."
+            yield "log", "⏳ Loading diffusion model..."
             conf = K.config.load_config(self.paths['config'])
             model = K.config.make_denoiser_wrapper(conf)(K.config.make_model(conf).to("cuda" if torch.cuda.is_available() else "cpu"))
             # DEBUG PATCH
@@ -211,7 +211,7 @@ class DiffLocksInference():
 
             extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_gpu, "final_latent": patch_emb_gpu}}}
             
-            yield "log", "🎨 Iniciando muestreo (Sampling)... Esto tomará unos minutos."
+            yield "log", "🎨 Starting sampling... This will take a few minutes."
             # Sampling (Sin autocast para igualar referencia)
             scalp = sample_images_cfg(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra)
             
@@ -227,7 +227,7 @@ class DiffLocksInference():
 
 
             if density.sum() == 0: 
-                yield "error", "El modelo generó un mapa de densidad vacío."
+                yield "error", "The model generated an empty density map."
                 return
             yield "log", f"✅ Textura neural generada (density sum: {density.sum():.1f})"
             
@@ -237,7 +237,7 @@ class DiffLocksInference():
             codec.load_state_dict(torch.load(self.paths['codec'], map_location='cpu', weights_only=False))
             codec.eval()
             
-            yield "log", f"⏳ Procesando {self.nr_chunks_decode_strands} chunks de geometría..."
+            yield "log", f"⏳ Processing {self.nr_chunks_decode_strands} geometry chunks..."
             
             # Ensure float32 for decoder
             scalp_texture = scalp_cpu[:,0:-1].float()
@@ -249,7 +249,7 @@ class DiffLocksInference():
                 self.mesh_data_cpu, self.tbn_space_to_world, self.nr_chunks_decode_strands)
             
             del codec, scalp_cpu, density; force_cleanup()
-            yield "log", "✅ Geometría 3D construida"
+            yield "log", "✅ 3D Geometry built"
             
             # 5. SAVE
             yield "status", "💾 5/5: Guardando Archivos..."
@@ -259,7 +259,7 @@ class DiffLocksInference():
                 del positions
                 torchvision.utils.save_image(rgb_img_cpu, os.path.join(out_path, "rgb.png"))
             
-            yield "log", "✨ ¡Proceso Completado!"
+            yield "log", "✨ Process Completed!"
             yield "result", strands, None
 
         except Exception as e:

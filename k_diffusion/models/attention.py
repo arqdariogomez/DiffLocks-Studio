@@ -146,7 +146,7 @@ class SpatialTransformerSimpleV2(nn.Module):
         q=q.squeeze(2)
         kv=torch.cat([k,v],2)
 
-        # === PARCHE REFERENCE V7: SDPA con scale=1.0 ===
+        # === REFERENCE V7 PATCH: SDPA with scale=1.0 ===
         q_s = q.squeeze(2)
         k_s, v_s = kv.chunk(2, dim=2)
         k_s, v_s = k_s.squeeze(2), v_s.squeeze(2)

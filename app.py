@@ -1,12 +1,12 @@
 # app.py - DiffLocks Studio (Universal V2)
 # ============================================================================
-# Mejoras:
-# - UI moderna con estados visuales (de Kaggle V144)
-# - Debug Console integrada
-# - Traducciones de progreso con tiempos estimados
-# - Exportación OBJ nativa (sin Blender)
-# - Manejo robusto de errores
-# - Compatible con: HF Space, Kaggle, Colab, Docker, Local
+# Improvements:
+# - Modern UI with visual states (from Kaggle V144)
+# - Integrated Debug Console
+# - Progress translations with estimated times
+# - Native OBJ export (no Blender required)
+# - Robust error handling
+# - Compatible with: HF Space, Kaggle, Colab, Docker, Local
 # ============================================================================
 
 import os
