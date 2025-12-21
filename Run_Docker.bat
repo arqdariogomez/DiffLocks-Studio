@@ -1,16 +1,16 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Set UTF-8 encoding to support emojis and special characters
+:: Set UTF-8 encoding
 chcp 65001 >nul
 
-echo 💇‍♀️ DiffLocks Studio - Docker Launcher
+echo DiffLocks Studio - Docker Launcher
 echo ========================================
 
 :: Check for Docker
 docker --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ❌ Error: Docker is not installed or not in PATH.
+    echo Error: Docker is not installed or not in PATH.
     echo Please install Docker Desktop from https://www.docker.com/
     pause
     exit /b 1
@@ -28,7 +28,7 @@ set "ZIP_FILE=difflocks_checkpoints.zip"
 
 if not defined FOUND_CKPT (
     if exist "%ZIP_FILE%" (
-        echo 📦 Found %ZIP_FILE%. Unzipping...
+        echo Found %ZIP_FILE%. Unzipping...
         powershell -Command "Expand-Archive -Path '%ZIP_FILE%' -DestinationPath '.' -Force"
         
         :: Re-check after unzip
@@ -45,11 +45,11 @@ if not defined FOUND_CKPT (
                 set "FOUND_CKPT=checkpoints\found"
             )
         )
-        echo ✅ Unzipped successfully.
+        echo Unzipped successfully.
     ) else (
-        echo ❌ Error: Checkpoints not found!
+        echo Error: Checkpoints not found!
         echo.
-        echo 📥 How to fix:
+        echo How to fix:
         echo 1. Register/Login at https://difflocks.is.tue.mpg.de/
         echo 2. Download 'difflocks_checkpoints.zip'
         echo 3. Place the .zip file in THIS folder: %cd%
@@ -60,16 +60,15 @@ if not defined FOUND_CKPT (
     )
 )
 
-:: Check for GPU support (More robust check for Windows)
-echo 🔍 Checking for GPU support...
-:: We run a small test. If it fails, we warn the user but continue in CPU mode.
-:: Removed silence (>nul 2>&1) to help debug crashes
+:: Check for GPU support
+echo Checking for GPU support...
+:: We run a small test.
 docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 if %errorlevel% neq 0 (
     echo.
-    echo ⚠️  Warning: GPU support not detected in Docker.
+    echo Warning: GPU support not detected in Docker.
     echo.
-    echo 💡 To enable GPU (NVIDIA):
+    echo To enable GPU (NVIDIA):
     echo 1. Run 'wsl --update' in PowerShell.
     echo 2. Ensure 'Use the WSL 2 based engine' is enabled in Docker Desktop Settings.
     echo 3. Restart Docker Desktop.
@@ -77,20 +76,21 @@ if %errorlevel% neq 0 (
     echo Running in CPU mode...
     echo.
 ) else (
-    echo ✅ GPU support detected!
+    echo GPU support detected!
 )
 echo.
 
-echo 🚀 Starting Docker containers...
-echo 🌐 Once ready, open http://localhost:7860 in your browser.
+echo Starting Docker containers...
+echo Once ready, open http://localhost:7860 in your browser.
 echo.
 
-docker-compose up
+:: Use docker compose (modern)
+docker compose up
 
 if %errorlevel% neq 0 (
     echo.
-    echo ❌ Docker Compose failed to start.
-    echo Tip: Try running 'docker-compose up --build' if you just updated the code.
+    echo Docker Compose failed to start.
+    echo Tip: Try running 'docker compose up --build' if you just updated the code.
     pause
     exit /b 1
 )
