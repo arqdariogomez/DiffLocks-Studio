@@ -134,13 +134,14 @@ class DiffLocksInference():
 
     # AHORA ES UN GENERADOR (YIELD)
     @torch.inference_mode()
-    def rgb2hair(self, rgb_img, out_path=None, cfg_val=None, progress=None):
+    def rgb2hair(self, rgb_img, out_path=None, cfg_val=None, progress=None, use_half=None):
         if out_path: os.makedirs(out_path, exist_ok=True)
         actual_cfg = cfg_val if cfg_val is not None else self.cfg_val
+        actual_half = use_half if use_half is not None else cfg.use_half
         
         if progress is not None: progress(0, desc="Starting...")
         # LOG INICIAL
-        yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise}"
+        yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise} | Half={actual_half}"
 
         try:
             # 1. GEOMETRY
@@ -197,7 +198,7 @@ class DiffLocksInference():
                 raise e
             # END DEBUG PATCH
             model.inner_model.load_state_dict(ckpt['model_ema'])
-            if cfg.use_half: 
+            if actual_half: 
                 print(f"✨ Using Half Precision (float16) - VRAM: {cfg.vram_gb:.1f}GB")
                 model.half()
             else:
@@ -208,7 +209,7 @@ class DiffLocksInference():
             # Embeddings precision
             cls_tok_gpu = cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu")
             patch_emb_gpu = patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu")
-            if cfg.use_half:
+            if actual_half:
                 cls_tok_gpu = cls_tok_gpu.half()
                 patch_emb_gpu = patch_emb_gpu.half()
 
@@ -294,9 +295,9 @@ class DiffLocksInference():
         finally:
             force_cleanup()
 
-    def file2hair(self, fpath, out, cfg_val=None, progress=None):
+    def file2hair(self, fpath, out, cfg_val=None, progress=None, use_half=None):
         img = cv2.imread(fpath)
         if img is None: raise FileNotFoundError(f"{fpath}")
         rgb = torch.tensor(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.
         # Propagamos el generador
-        yield from self.rgb2hair(rgb, out, cfg_val=cfg_val, progress=progress)
+        yield from self.rgb2hair(rgb, out, cfg_val=cfg_val, progress=progress, use_half=use_half)
