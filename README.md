@@ -16,7 +16,7 @@ license: other
 
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a)
 [![Original Repo](https://img.shields.io/badge/Original-Meshcapade-blue)](https://github.com/Meshcapade/difflocks)
-A kaggle notebook is under development, is currently working, I am just refining some details.
+[![HuggingFace Space](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Space-yellow)](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio)
 
 ## 🌟 About this Project
 
@@ -48,62 +48,63 @@ This project was born from a desire to learn, gain experience in deploying compl
 
 ---
 
-## ⚙️ Technical Improvements and Changes
+## 🚀 Getting Started (Choose your path)
 
-We have introduced several key optimizations compared to the original repository:
-- **Platform-Aware Precision**: Automatic VRAM detection to toggle between `float16` and `float32`.
-- **Pinokio Support**: One-click installation and execution scripts for Windows/Linux/Mac.
-- **Natten Fallback**: Native PyTorch implementation for Neighborhood Attention, allowing usage without compiling external libraries.
-- **Robust Model Search**: Recursive checkpoint detection system to simplify initial setup.
+We recommend using the platforms in this order of simplicity:
+
+1. **Hugging Face Space (ZeroGPU)**: [Click here](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). The easiest way. Just upload a photo and wait. (Requires ZeroGPU grant or waiting in queue).
+2. **Google Colab / Kaggle**: Best for free GPU access. Use the badges at the top.
+3. **Pinokio (Local)**: One-click installer for Windows/Mac/Linux. Download [Pinokio](https://pinokio.computer) and search for "DiffLocks Studio".
+4. **Docker / Manual**: For advanced users and developers.
 
 ---
 
-## 🚀 Usage Guide
+## 🧠 Model Setup (Checkpoints)
 
-### 🖥️ Web Interface
-Simply run the project in Pinokio or via `python app.py`. Upload a face image and press "Generate".
+Due to licensing, we do not include the model weights in the repository. You have two ways to set them up:
 
-### 🔌 Developer API
+### Option A: Automatic (Recommended)
+Set your `HF_TOKEN` environment variable or enter it in the app settings. The app will automatically download the required assets from our [Hugging Face Dataset](https://huggingface.co/datasets/arqdariogomez/difflocks-assets-hybrid).
 
-#### Python
-```python
-from inference.img2hair import DiffLocksInference
+### Option B: Manual Download
+1. Download the checkpoints from the [original Meshcapade repo](https://github.com/Meshcapade/difflocks).
+2. Place them in the following structure:
+   ```
+   checkpoints/
+   ├── scalp_diffusion.pth
+   └── strand_vae/
+       └── strand_codec.pt
+   ```
 
-# Initialize (automatically detects GPU and precision)
-infer = DiffLocksInference(
-    path_ckpt_strandcodec="checkpoints/strand_vae/strand_codec.pt",
-    path_config_difflocks="configs/config_scalp_texture_conditional.json",
-    path_ckpt_difflocks="checkpoints/scalp_diffusion.pth"
-)
+---
 
-# Generate from image
-for step, msg in infer.run_from_image("input.jpg"):
-    print(f"[{step}] {msg}")
-```
+## ⚙️ Technical Improvements
 
-#### Curl (Gradio API)
-```bash
-curl -X POST https://your-gradio-url/api/predict \
-  -H "Content-Type: application/json" \
-  -d '{"data": ["data:image/jpeg;base64,..."]}'
-```
+- **Platform-Aware Precision**: Automatic VRAM detection (toggles `float16` if < 12GB).
+- **Natten Fallback**: Native PyTorch implementation for Neighborhood Attention.
+- **Self-Update**: Integrated "Check for Updates" button in the UI.
+- **Blender Integration**: Native `.blend` export with modern hair curves.
+
+---
+
+## 🐳 Docker Deployment
+
+To run with Docker and NVIDIA GPU support:
+
+1. Install [Docker](https://www.docker.com/) and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+2. Clone the repo.
+3. Run:
+   ```bash
+   docker-compose up --build
+   ```
+4. Open `http://localhost:7860`.
 
 ---
 
 ## 🎨 Exporting to Blender
 
-DiffLocks Studio includes tools to bring your 3D hair into Blender:
-1. **Generate**: After inference, download the `.npz` file.
-2. **Import**: Use the `npz_blender_importer.py` script inside Blender to load the strands as native curves.
-3. **Addon**: You can also install the `blender_addon` folder as a standard Blender addon.
-Alternatively you can generate .blend (with native hair curves), .usd, and alembic .abc
-
----
-
-## 🛠️ Local Installation
-
-1. Clone the repo.
-2. Create venv: `python -m venv venv`.
-3. Install dependencies: `pip install -r requirements.txt`.
-4. Download models: `python download_checkpoints.py`.
-5. Start: `python app.py`.
+1. **Generate**: After inference, download the results (ZIP).
+2. **Import**: 
+   - Use the `.blend` file directly.
+   - Or use the `npz_blender_importer.py` script to load `.npz` data.
+   - Or install the `blender_addon` folder.

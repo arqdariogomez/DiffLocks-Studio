@@ -5,16 +5,18 @@ services:
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+      - HF_TOKEN=${HF_TOKEN:-} # Optional: Pass HF_TOKEN from host environment
     ports:
       - "7860:7860"
     volumes:
       - ./checkpoints:/app/checkpoints
       - ./studio_outputs:/app/studio_outputs
+      - ./.git:/app/.git # Allow "Check for Updates" to work in Docker
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities: [ gpu ]
     command: python app.py

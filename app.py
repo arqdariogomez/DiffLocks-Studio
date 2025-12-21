@@ -347,6 +347,23 @@ def export_blender(npz_path, output_base, formats):
         print(f"Blender export error: {e}")
         return []
 
+def check_for_updates():
+    """Check for git updates and pull if available"""
+    try:
+        import subprocess
+        # Fetch latest
+        subprocess.run(["git", "fetch"], capture_output=True, check=True)
+        # Check status
+        status = subprocess.run(["git", "status", "-uno"], capture_output=True, text=True, check=True).stdout
+        if "Your branch is behind" in status:
+            yield "🔄 Update found! Pulling changes..."
+            subprocess.run(["git", "pull"], capture_output=True, check=True)
+            yield "✅ Successfully updated! Please restart the app to apply changes."
+        else:
+            yield "✨ You are already up to date!"
+    except Exception as e:
+        yield f"❌ Update failed: {str(e)}"
+
 # --- 5. MAIN INFERENCE FUNCTION ---
 
 def run_inference(image, cfg_scale, export_formats, debug_logs):
@@ -526,6 +543,24 @@ footer { display: none !important; }
     background: #0d1117 !important;
     color: #c9d1d9 !important;
 }
+
+/* Notification Sound */
+#notification-trigger { display: none; }
+"""
+
+JS_NOTIFY = """
+function() {
+    // Sound notification
+    const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+    audio.play().catch(e => console.log("Sound blocked by browser"));
+    
+    // Browser notification
+    if (Notification.permission === "granted") {
+        new Notification("DiffLocks Studio", { body: "✨ Generation Complete!" });
+    } else if (Notification.permission !== "denied") {
+        Notification.requestPermission();
+    }
+}
 """
 
 with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLocks Studio") as demo:
@@ -571,6 +606,13 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLoc
                 variant="primary",
                 size="lg"
             )
+            
+            with gr.Accordion("⚙️ System", open=False):
+                update_btn = gr.Button("🔄 Check for Updates")
+                update_status = gr.Markdown("")
+                
+                # Hidden trigger for JS notification
+                notify_trigger = gr.Button("Notify", elem_id="notification-trigger", visible=False)
         
         # Right Panel - Results
         with gr.Column(scale=2):
@@ -602,6 +644,14 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLoc
         fn=run_inference,
         inputs=[image_input, cfg_slider, format_checkboxes, debug_console],
         outputs=[plot_3d, preview_2d, status_html, result_group, download_file, debug_console, generate_btn]
+    ).then(
+        fn=None,
+        _js=JS_NOTIFY
+    )
+    
+    update_btn.click(
+        fn=check_for_updates,
+        outputs=[update_status]
     )
 
 # --- 7. LAUNCH ---

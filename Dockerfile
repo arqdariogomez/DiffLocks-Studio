@@ -1,11 +1,11 @@
-# Usamos la imagen oficial de PyTorch
+# Use official PyTorch image with CUDA support
 FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. Instalar dependencias del sistema
+# 1. Install system dependencies
 RUN apt-get update && apt-get install -y \
     git wget xz-utils \
     libgl1-mesa-glx libglib2.0-0 \
@@ -14,28 +14,31 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# 2. Clonar Repositorio (PRIMERO, mientras la carpeta está vacía)
-RUN git clone https://github.com/arqdariogomez/difflocks.git .
-
-# 3. Instalar Blender 4.1 (DESPUÉS)
+# 2. Install Blender 4.2 (LTS)
 RUN mkdir -p /app/blender && \
-    wget -q https://download.blender.org/release/Blender4.1/blender-4.1.1-linux-x64.tar.xz && \
-    tar -xf blender-4.1.1-linux-x64.tar.xz -C /app/blender --strip-components=1 && \
-    rm blender-4.1.1-linux-x64.tar.xz
+    wget -q https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz && \
+    tar -xf blender-4.2.5-linux-x64.tar.xz -C /app/blender --strip-components=1 && \
+    rm blender-4.2.5-linux-x64.tar.xz
 
 ENV PATH="/app/blender:$PATH"
 
-# 4. Copiar Archivos Locales (Solo código, NO checkpoints)
-COPY ./app.py /app/app.py
-COPY ./converter.py /app/converter.py
+# 3. Copy Local Files
+# We copy everything except what's in .dockerignore (like checkpoints)
+COPY . /app
 
-# 5. Instalar Dependencias Python
+# 4. Install Python Dependencies
+# Natten from pre-built wheels
 RUN pip install natten==0.17.1+torch240cu121 -f https://shi-labs.com/natten/wheels/ --trusted-host shi-labs.com
-RUN pip install gradio==3.50.2 opencv-python-headless mediapipe==0.10.14 packaging ninja plotly numpy jsonmerge clean-fid torchdiffeq torchsde einops transformers accelerate scikit-image trimesh dctorch libigl
 
-# 6. Assets
+# Other requirements
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 5. Assets (Face Landmarker)
 RUN mkdir -p inference/assets && \
     wget -q -O inference/assets/face_landmarker_v2_with_blendshapes.task \
     https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+
+# Expose Gradio port
+EXPOSE 7860
 
 CMD ["python", "app.py"]
