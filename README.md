@@ -51,27 +51,30 @@ This project was born from a desire to learn, gain experience in deploying compl
 
 ## 🚀 Getting Started (Recommended Order)
 
-1. **Kaggle (Highly Recommended)**: [Kaggle Notebook](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal). This is the most tested platform and provides generous GPU hours.
-2. **Pinokio (Local)**: Best for local use. 
-   - Download [Pinokio](https://pinokio.computer).
-   - Go to **Discover** -> **Add from URL**.
-   - Paste this repo URL and hit Enter.
-   - **Tip**: When the console says the app is ready at `0.0.0.0`, use [http://localhost:7860/](http://localhost:7860/) in your browser.
-3. **Google Colab**: [Colab Notebook](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a). (Currently under refinement).
-4. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). Great if you have a ZeroGPU grant or want a quick test.
+1. **Kaggle (Best Experience)**: [Kaggle Notebook](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal). This is the most tested platform, providing generous GPU hours and the most stable environment.
+2. **Pinokio (Local)**: One-click installer for Windows/Mac/Linux.
+   - Ensure you have the latest version of [Pinokio](https://pinokio.computer).
+   - Go to the **Discover** section.
+   - Click on **Add from URL**.
+   - Paste this repository URL and hit **Enter**.
+   - **Tip**: When the console says the app is ready at `0.0.0.0`, use [http://localhost:7860/](http://localhost:7860/) in your browser for the best compatibility.
+3. **Google Colab**: [Colab Notebook](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a). (Currently being refined to ensure 100% stability).
+4. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). A great "try-it-now" option. It becomes the #1 choice if a ZeroGPU grant is active; otherwise, you may need to wait in a queue.
 
 ---
 
 ## 🧠 Model Setup (Checkpoints)
 
-Due to licensing, we do not include the model weights. You must set them up:
+Due to licensing restrictions, model weights are not included. Here is how to set them up:
 
-### Option A: Automatic (Using Secrets)
-On Kaggle/Colab, use the **Secrets** add-on to store your `HF_TOKEN`. This is the safest way to handle your credentials. The app will automatically download assets from our [Hugging Face Dataset](https://huggingface.co/datasets/arqdariogomez/difflocks-assets-hybrid).
+### 🔐 Using "Secrets" (Kaggle / Colab)
+For cloud platforms, the best and most private way is to use the **Secrets** add-on. Store your `HF_TOKEN` there. This ensures your credentials remain private while allowing the app to securely download the necessary assets for the first run.
 
-### Option B: Manual Download
-1. Download checkpoints from [Meshcapade/difflocks](https://github.com/Meshcapade/difflocks).
-2. Place them in:
+### 📥 Manual Download (Local / Docker)
+If you are running locally or want full control:
+1. Download the checkpoints from the [original Meshcapade repository](https://github.com/Meshcapade/difflocks).
+2. Create a `checkpoints` folder in the project root.
+3. Place the files in this exact structure:
    ```
    checkpoints/
    ├── scalp_diffusion.pth
