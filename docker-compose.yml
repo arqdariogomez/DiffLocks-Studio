@@ -9,9 +9,11 @@ services:
     ports:
       - "7860:7860"
     volumes:
+      - .:/app
+      - /app/blender # Preserve blender folder from image
+      - /app/inference/assets # Preserve assets from image
       - ./checkpoints:/app/checkpoints
       - ./studio_outputs:/app/studio_outputs
-      - ./.git:/app/.git # Allow "Check for Updates" to work in Docker
     deploy:
       resources:
         reservations:

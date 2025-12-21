@@ -70,11 +70,12 @@ echo 🚀 Starting Docker containers...
 echo 🌐 Once ready, open http://localhost:7860 in your browser.
 echo.
 
-docker-compose up --build
+docker-compose up
 
 if %errorlevel% neq 0 (
     echo.
     echo ❌ Docker Compose failed to start.
+    echo Tip: Try running 'docker-compose up --build' if you just updated the code.
     pause
     exit /b 1
 )

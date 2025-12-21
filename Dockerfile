@@ -22,16 +22,13 @@ RUN mkdir -p /app/blender && \
 
 ENV PATH="/app/blender:$PATH"
 
-# 3. Copy Local Files
-# We copy everything except what's in .dockerignore (like checkpoints)
-COPY . /app
-
-# 4. Install Python Dependencies
-# Natten from pre-built wheels
+# 3. Install Python Dependencies (Cached)
+COPY requirements.txt /app/
 RUN pip install natten==0.17.1+torch240cu121 -f https://shi-labs.com/natten/wheels/ --trusted-host shi-labs.com
-
-# Other requirements
 RUN pip install --no-cache-dir -r requirements.txt
+
+# 4. Copy Local Files
+COPY . /app
 
 # 5. Assets (Face Landmarker)
 RUN mkdir -p inference/assets && \
