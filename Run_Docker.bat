@@ -1,6 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Set UTF-8 encoding to support emojis and special characters
+chcp 65001 >nul
+
 echo 💇‍♀️ DiffLocks Studio - Docker Launcher
 echo ========================================
 
@@ -59,8 +62,11 @@ if not defined FOUND_CKPT (
 
 :: Check for GPU support (More robust check for Windows)
 echo 🔍 Checking for GPU support...
-docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi >nul 2>&1
+:: We run a small test. If it fails, we warn the user but continue in CPU mode.
+:: Removed silence (>nul 2>&1) to help debug crashes
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 if %errorlevel% neq 0 (
+    echo.
     echo ⚠️  Warning: GPU support not detected in Docker.
     echo.
     echo 💡 To enable GPU (NVIDIA):
@@ -69,6 +75,7 @@ if %errorlevel% neq 0 (
     echo 3. Restart Docker Desktop.
     echo.
     echo Running in CPU mode...
+    echo.
 ) else (
     echo ✅ GPU support detected!
 )
