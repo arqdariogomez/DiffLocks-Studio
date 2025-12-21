@@ -596,7 +596,7 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLoc
             
             format_checkboxes = gr.CheckboxGroup(
                 choices=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"],
-                value=[],
+                value=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"],
                 label="Additional Exports",
                 info="OBJ is always included"
             )

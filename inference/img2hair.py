@@ -224,15 +224,18 @@ class DiffLocksInference():
             density[density<0.02] = 0.0
             
             # Debug logging for density map
+            d_sum = density.sum().item()
+            d_max = density.max().item()
+            print(f"DEBUG img2hair: density_map sum = {d_sum:.2f}, max = {d_max:.4f}")
 
 
             if density.sum() == 0: 
-                yield "error", "The model generated an empty density map."
+                yield "error", "The model generated an empty density map. Try a different image or adjust CFG."
                 return
-            yield "log", f"✅ Textura neural generada (density sum: {density.sum():.1f})"
+            yield "log", f"✅ Neural texture generated (density sum: {density.sum():.1f})"
             
             # 4. DECODING
-            yield "status", "🧬 4/5: Decodificando en 3D (CPU)..."
+            yield "status", "🧬 4/5: Decoding in 3D (CPU)..."
             codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).cpu()
             codec.load_state_dict(torch.load(self.paths['codec'], map_location='cpu', weights_only=False))
             codec.eval()
@@ -252,7 +255,7 @@ class DiffLocksInference():
             yield "log", "✅ 3D Geometry built"
             
             # 5. SAVE
-            yield "status", "💾 5/5: Guardando Archivos..."
+            yield "status", "💾 5/5: Saving Files..."
             if out_path and strands is not None:
                 positions = strands.cpu().numpy()
                 np.savez_compressed(os.path.join(out_path, "difflocks_output_strands.npz"), positions=positions)

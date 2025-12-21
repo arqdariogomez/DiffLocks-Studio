@@ -14,6 +14,7 @@ license: other
 
 **High-Fidelity 3D Hair Generation from Single Images**
 
+[![Kaggle](https://img.shields.io/badge/Kaggle-Notebook-blue?logo=kaggle)](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal)
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a)
 [![Original Repo](https://img.shields.io/badge/Original-Meshcapade-blue)](https://github.com/Meshcapade/difflocks)
 [![HuggingFace Space](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Space-yellow)](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio)
@@ -48,27 +49,29 @@ This project was born from a desire to learn, gain experience in deploying compl
 
 ---
 
-## 🚀 Getting Started (Choose your path)
+## 🚀 Getting Started (Recommended Order)
 
-We recommend using the platforms in this order of simplicity:
-
-1. **Hugging Face Space (ZeroGPU)**: [Click here](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). The easiest way. Just upload a photo and wait. (Requires ZeroGPU grant or waiting in queue).
-2. **Google Colab / Kaggle**: Best for free GPU access. Use the badges at the top.
-3. **Pinokio (Local)**: One-click installer for Windows/Mac/Linux. Download [Pinokio](https://pinokio.computer) and search for "DiffLocks Studio".
-4. **Docker / Manual**: For advanced users and developers.
+1. **Kaggle (Highly Recommended)**: [Kaggle Notebook](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal). This is the most tested platform and provides generous GPU hours.
+2. **Pinokio (Local)**: Best for local use. 
+   - Download [Pinokio](https://pinokio.computer).
+   - Go to **Discover** -> **Add from URL**.
+   - Paste this repo URL and hit Enter.
+   - **Tip**: When the console says the app is ready at `0.0.0.0`, use [http://localhost:7860/](http://localhost:7860/) in your browser.
+3. **Google Colab**: [Colab Notebook](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a). (Currently under refinement).
+4. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). Great if you have a ZeroGPU grant or want a quick test.
 
 ---
 
 ## 🧠 Model Setup (Checkpoints)
 
-Due to licensing, we do not include the model weights in the repository. You have two ways to set them up:
+Due to licensing, we do not include the model weights. You must set them up:
 
-### Option A: Automatic (Recommended)
-Set your `HF_TOKEN` environment variable or enter it in the app settings. The app will automatically download the required assets from our [Hugging Face Dataset](https://huggingface.co/datasets/arqdariogomez/difflocks-assets-hybrid).
+### Option A: Automatic (Using Secrets)
+On Kaggle/Colab, use the **Secrets** add-on to store your `HF_TOKEN`. This is the safest way to handle your credentials. The app will automatically download assets from our [Hugging Face Dataset](https://huggingface.co/datasets/arqdariogomez/difflocks-assets-hybrid).
 
 ### Option B: Manual Download
-1. Download the checkpoints from the [original Meshcapade repo](https://github.com/Meshcapade/difflocks).
-2. Place them in the following structure:
+1. Download checkpoints from [Meshcapade/difflocks](https://github.com/Meshcapade/difflocks).
+2. Place them in:
    ```
    checkpoints/
    ├── scalp_diffusion.pth
@@ -90,21 +93,6 @@ Set your `HF_TOKEN` environment variable or enter it in the app settings. The ap
 ## 🐳 Docker Deployment
 
 To run with Docker and NVIDIA GPU support:
-
-1. Install [Docker](https://www.docker.com/) and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-2. Clone the repo.
-3. Run:
-   ```bash
-   docker-compose up --build
-   ```
-4. Open `http://localhost:7860`.
-
----
-
-## 🎨 Exporting to Blender
-
-1. **Generate**: After inference, download the results (ZIP).
-2. **Import**: 
-   - Use the `.blend` file directly.
-   - Or use the `npz_blender_importer.py` script to load `.npz` data.
-   - Or install the `blender_addon` folder.
+1. Install Docker and NVIDIA Container Toolkit.
+2. Run: `docker-compose up --build`
+3. Open `http://localhost:7860`.
