@@ -19,10 +19,13 @@ class Config:
     output_dir: Path
     blender_exe: Path
     has_gpu: bool
+    vram_gb: float
+    use_half: bool
     needs_share: bool
 
     @staticmethod
     def detect() -> 'Config':
+        # ... (detección de plataforma igual) ...
         if Path("/kaggle").exists():
             platform = 'kaggle'
             work_dir = Path("/kaggle/working")
@@ -55,14 +58,20 @@ class Config:
             needs_share = False
 
         has_gpu = False
+        vram_gb = 0.0
+        use_half = False
         try:
             import torch
             has_gpu = torch.cuda.is_available()
+            if has_gpu:
+                vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+                # Usar float16 si < 12GB VRAM o si estamos en HuggingFace (estándar)
+                use_half = vram_gb < 12 or platform == 'huggingface'
         except: pass
 
         output_dir = work_dir / "outputs"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        return Config(platform, work_dir, repo_dir, output_dir, blender_exe, has_gpu, needs_share)
+        return Config(platform, work_dir, repo_dir, output_dir, blender_exe, has_gpu, vram_gb, use_half, needs_share)
 
 cfg = Config.detect()

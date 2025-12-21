@@ -14,6 +14,7 @@ from models.rgb_to_material import RGB2MaterialModel
 from utils.diffusion_utils import sample_images_cfg
 from utils.strand_util import sample_strands_from_scalp_with_density
 from data_loader.dataloader import DiffLocksDataset
+from platform_config import cfg
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
@@ -193,11 +194,22 @@ class DiffLocksInference():
                 raise e
             # END DEBUG PATCH
             model.inner_model.load_state_dict(ckpt['model_ema'])
-            if torch.cuda.is_available(): model.half() # Optimize VRAM
+            if cfg.use_half: 
+                print(f"✨ Using Half Precision (float16) - VRAM: {cfg.vram_gb:.1f}GB")
+                model.half()
+            else:
+                print(f"💎 Using Full Precision (float32) - VRAM: {cfg.vram_gb:.1f}GB")
             del ckpt; force_cleanup()
             model.eval(); model.inner_model.condition_dropout_rate = 0.0
             
-            extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu").half(), "final_latent": patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu").half()}}}
+            # Embeddings precision
+            cls_tok_gpu = cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu")
+            patch_emb_gpu = patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu")
+            if cfg.use_half:
+                cls_tok_gpu = cls_tok_gpu.half()
+                patch_emb_gpu = patch_emb_gpu.half()
+
+            extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_gpu, "final_latent": patch_emb_gpu}}}
             
             yield "log", "🎨 Iniciando muestreo (Sampling)... Esto tomará unos minutos."
             # Sampling (Sin autocast para igualar referencia)
