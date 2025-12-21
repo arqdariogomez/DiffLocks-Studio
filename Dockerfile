@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y \
     git wget xz-utils \
     libgl1-mesa-glx libglib2.0-0 \
     libx11-6 libxrender1 libxxf86vm1 libxi6 libsm6 \
+    libxkbcommon0 libice6 libxcursor1 libxinerama1 \
+    libxrandr2 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

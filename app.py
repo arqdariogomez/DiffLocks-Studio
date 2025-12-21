@@ -26,6 +26,7 @@ import gradio as gr
 import numpy as np
 import torch
 from pathlib import Path
+import plotly.graph_objects as go
 
 # --- 0. SILENCING ---
 warnings.filterwarnings("ignore")
@@ -336,12 +337,12 @@ def generate_preview_2d(npz_path, output_dir, log_capture=None):
 
 def generate_preview_3d(npz_path, log_capture=None):
     try:
-        import plotly.graph_objects as go
+        if log_capture: log_capture.add_log("🎨 3D Interactive: Loading data...")
         data = np.load(npz_path)
         positions = data['positions']
         num_strands, points_per_strand, _ = positions.shape
         
-        target_strands = max(100, num_strands // 2)
+        if log_capture: log_capture.add_log(f"🎨 3D Interactive: Processing {num_strands} strands...")
         strand_step = max(1, num_strands // target_strands)
         target_points = 32
         point_step = max(1, points_per_strand // target_points)
@@ -408,15 +409,16 @@ def generate_preview_3d(npz_path, log_capture=None):
             height=550,
             showlegend=False
         )
+        
+        if log_capture: log_capture.add_log("✅ 3D Interactive: Plot created successfully")
         del positions, subset, x, y, z, fx, fy, fz, x_plot, y_plot, z_plot, color_array
         gc.collect()
         return fig
     except Exception as e:
-        if log_capture: log_capture.add_log(f"❌ 3D Preview error: {e}")
+        if log_capture: log_capture.add_log(f"❌ 3D Interactive error: {e}")
         return None
 
 def create_empty_3d_plot():
-    import plotly.graph_objects as go
     fig = go.Figure()
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
@@ -590,7 +592,7 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
             plot_3d: plot_3d_fig,
             preview_2d: preview_2d_html,
             status_html: create_complete_html(),
-            result_group: gr.Group(visible=True),
+            result_group: gr.update(visible=True),
             download_file: final_files,
             debug_console: render_debug_console(log_capture.get_logs()),
             generate_btn: gr.Button(interactive=True)
