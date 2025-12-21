@@ -23,12 +23,8 @@ def main():
     print(f"📁 Downloading to: {base_dir.absolute()}")
     
     try:
-        # Checkpoints
-        print("🔹 Downloading checkpoints...")
-        snapshot_download(repo_id=REPO_ID, repo_type="dataset", allow_patterns=["checkpoints/*", "*.pth", "*.pt"], local_dir=str(base_dir), token=token)
-        
-        # Assets
-        print("🔹 Downloading assets...")
+        # Assets (Face Landmarker, etc.)
+        print("🔹 Downloading required assets...")
         assets_dir = base_dir / "inference" / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
         snapshot_download(repo_id=REPO_ID, repo_type="dataset", allow_patterns=["assets/*"], local_dir=str(base_dir / "inference"), token=token)

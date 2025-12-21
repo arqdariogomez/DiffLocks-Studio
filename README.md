@@ -23,7 +23,7 @@ license: other
 
 This repository is a modification of **DiffLocks**, the original project by **Meshcapade GmbH** and the **Max Planck Institute for Intelligent Systems**.
 
-### 🎯 The Mission: Democratization
+### 🎯 Our Mission: Democratization
 The primary goal of **DiffLocks Studio** is to democratize access to this cutting-edge technology. We have optimized the original code to run on consumer-grade hardware (such as an 8GB GPU) and accessible platforms like **Pinokio**, removing the entry barrier of requiring high-performance workstations.
 
 ---
@@ -48,24 +48,37 @@ The primary goal of **DiffLocks Studio** is to democratize access to this cuttin
 
 ## 🚀 Getting Started (Recommended Order)
 
-1. **Kaggle (Best Experience)**: [Kaggle Notebook](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal). This is the most tested platform, providing generous GPU hours and the most stable environment.
+1. **Kaggle (Highly Recommended)**: [Kaggle Notebook](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal). 
+   - **Why?** It provides the most stable environment and generous GPU hours.
+   - **Note**: Colab is currently being refined for 100% stability.
 2. **Pinokio (Local)**: One-click installer for Windows/Mac/Linux.
    - Ensure you have the latest version of [Pinokio](https://pinokio.computer).
    - Go to the **Discover** section.
    - Click on **Add from URL**.
    - Paste this repository URL and hit **Enter**.
    - **Tip**: When the console says the app is ready at `0.0.0.0`, use [http://localhost:7860/](http://localhost:7860/) in your browser for the best compatibility.
-3. **Google Colab**: [Colab Notebook](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a). (Currently being refined to ensure 100% stability).
-4. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). A great "try-it-now" option. It becomes the #1 choice if a ZeroGPU grant is active.
+3. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). 
+   - **Note**: This is a great "try-it-now" option, but it depends on ZeroGPU grant availability. If not available, it will be slow or queued.
 
 ---
 
 ## 🧠 Model Setup (Checkpoints)
 
-Due to licensing restrictions, model weights are not included. To ensure privacy and license compliance, we use the **Secrets** system.
+Due to licensing restrictions, model weights are not included in this repository. You must set them up manually.
 
-### 🔐 Option A: Automatic Download (Cloud Platforms)
-Using **Secrets** is the best option because it keeps your API key private and ensures you are using the models under the correct research license.
+### 📥 Step 1: Manual Download
+1. Download the checkpoints from the [original Meshcapade repository](https://github.com/Meshcapade/difflocks).
+2. Create a `checkpoints` folder in the project root.
+3. Place the files in this exact structure:
+   ```
+   checkpoints/
+   ├── scalp_diffusion.pth
+   └── strand_vae/
+       └── strand_codec.pt
+   ```
+
+### 🔐 Step 2: Using "Secrets" (Kaggle / Colab)
+Even with manual setup, using the **Secrets** add-on is the best practice for privacy and license compliance. It allows the app to securely download required assets (like Face Landmarkers) without exposing your keys.
 
 #### 1. Generate your Hugging Face Token
 - Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
@@ -76,23 +89,6 @@ Using **Secrets** is the best option because it keeps your API key private and e
 #### 2. Add to your Platform
 - **Kaggle**: Go to **Add-ons** -> **Secrets**. Add a new secret with Label `HF_TOKEN` and paste your token in the Value field. Ensure the "Attached" checkbox is checked.
 - **Colab**: Click the **Key icon** (Secrets) in the left sidebar. Add a new secret named `HF_TOKEN` and paste your token. Enable "Notebook access".
-
-#### 3. Run the App
-The first time you run the app, it will detect your `HF_TOKEN` and automatically download the required checkpoints (~4GB) securely.
-
----
-
-### 📥 Option B: Manual Download (Local / Docker)
-If you are running locally or want full control:
-1. Download the checkpoints from the [original Meshcapade repository](https://github.com/Meshcapade/difflocks).
-2. Create a `checkpoints` folder in the project root.
-3. Place the files in this exact structure:
-   ```
-   checkpoints/
-   ├── scalp_diffusion.pth
-   └── strand_vae/
-       └── strand_codec.pt
-   ```
 
 ---
 
