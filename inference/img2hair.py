@@ -134,16 +134,18 @@ class DiffLocksInference():
 
     # AHORA ES UN GENERADOR (YIELD)
     @torch.inference_mode()
-    def rgb2hair(self, rgb_img, out_path=None, cfg_val=None):
+    def rgb2hair(self, rgb_img, out_path=None, cfg_val=None, progress=None):
         if out_path: os.makedirs(out_path, exist_ok=True)
         actual_cfg = cfg_val if cfg_val is not None else self.cfg_val
         
+        if progress: progress(0, desc="Starting...")
         # LOG INICIAL
         yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise}"
 
         try:
             # 1. GEOMETRY
             yield "status", "👤 1/5: Detecting Face and Geometry..."
+            if progress: progress(0.05, desc="Detecting Face...")
             frame = (rgb_img.permute(0,2,3,1).squeeze(0)*255).byte().cpu().numpy()
             _, lms = self.mediapipe_img.run(frame)
             if not lms: 
@@ -158,6 +160,7 @@ class DiffLocksInference():
             
             # 2. DINO
             yield "status", "🦖 2/5: Extracting Features (DINOv2)..."
+            if progress: progress(0.1, desc="Extracting DINO features...")
             dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', verbose=False).to("cuda" if torch.cuda.is_available() else "cpu")
             tf = T.Compose([T.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
             out = dinov2.forward_features(tf(rgb_img_gpu))
@@ -212,9 +215,20 @@ class DiffLocksInference():
             extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_gpu, "final_latent": patch_emb_gpu}}}
             
             yield "log", "🎨 Starting sampling... This will take a few minutes."
-            # Sampling (Sin autocast para igualar referencia)
-            scalp = sample_images_cfg(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra)
             
+            def p_callback(info):
+                if progress:
+                    i = info['i']
+                    progress(0.2 + 0.6 * (i / self.nr_iters_denoise), desc=f"Denoising {i}/{self.nr_iters_denoise}")
+
+            # Sampling (Sin autocast para igualar referencia)
+            scalp = sample_images_cfg(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra, callback=p_callback)
+            
+            # NaN Check
+            if torch.isnan(scalp).any():
+                yield "error", "The model generated NaN values. This can happen due to precision issues (float16) or high CFG. Try lowering CFG or restarting."
+                return
+
             # CRITICAL: Convert to float32 for decoder compatibility
             scalp_cpu = scalp.cpu().float().clone()
             sigma_data = conf['model']["sigma_data"]
@@ -236,6 +250,7 @@ class DiffLocksInference():
             
             # 4. DECODING
             yield "status", "🧬 4/5: Decoding in 3D (CPU)..."
+            if progress: progress(0.85, desc="Decoding strands...")
             codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).cpu()
             codec.load_state_dict(torch.load(self.paths['codec'], map_location='cpu', weights_only=False))
             codec.eval()
@@ -256,6 +271,7 @@ class DiffLocksInference():
             
             # 5. SAVE
             yield "status", "💾 5/5: Saving Files..."
+            if progress: progress(0.95, desc="Saving results...")
             if out_path and strands is not None:
                 positions = strands.cpu().numpy()
                 np.savez_compressed(os.path.join(out_path, "difflocks_output_strands.npz"), positions=positions)
@@ -263,6 +279,7 @@ class DiffLocksInference():
                 torchvision.utils.save_image(rgb_img_cpu, os.path.join(out_path, "rgb.png"))
             
             yield "log", "✨ Process Completed!"
+            if progress: progress(1.0, desc="Done!")
             yield "result", strands, None
 
         except Exception as e:
@@ -272,9 +289,9 @@ class DiffLocksInference():
         finally:
             force_cleanup()
 
-    def file2hair(self, fpath, out, cfg_val=None):
+    def file2hair(self, fpath, out, cfg_val=None, progress=None):
         img = cv2.imread(fpath)
         if img is None: raise FileNotFoundError(f"{fpath}")
         rgb = torch.tensor(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.
         # Propagamos el generador
-        yield from self.rgb2hair(rgb, out, cfg_val=cfg_val)
+        yield from self.rgb2hair(rgb, out, cfg_val=cfg_val, progress=progress)

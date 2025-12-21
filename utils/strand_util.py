@@ -626,10 +626,13 @@ def sample_strands_from_scalp_with_density(scalp_texture, density_map, strand_co
     # decode
     d_max = density_map.max().item()
     d_sum = density_map.sum().item()
-    print(f"DEBUG strand_util: density_map max={d_max:.4f}, sum={d_sum:.2f}, expected_strands={int(d_sum * upsample_multiplier)}")
+    
+    # Handle NaN for printing
+    d_sum_print = d_sum if not np.isnan(d_sum) else 0.0
+    print(f"DEBUG strand_util: density_map max={d_max:.4f}, sum={d_sum:.2f}, expected_strands={int(d_sum_print * upsample_multiplier)}")
 
-    # Guard against empty latents
-    if selected_latents.shape[0] == 0:
+    # Guard against empty latents or NaN
+    if np.isnan(d_sum) or selected_latents.shape[0] == 0:
         raise RuntimeError(f"No strands were sampled! Density map max was {d_max:.4f}. The model might have failed to generate hair for this image.")
     
     selected_latents_chunked = torch.chunk(selected_latents, nr_chunks)

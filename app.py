@@ -366,7 +366,7 @@ def check_for_updates():
 
 # --- 5. MAIN INFERENCE FUNCTION ---
 
-def run_inference(image, cfg_scale, export_formats, debug_logs):
+def run_inference(image, cfg_scale, export_formats, debug_logs, progress=gr.Progress()):
     """Main inference function with improved UI feedback"""
     
     # Initialize logs
@@ -431,7 +431,7 @@ def run_inference(image, cfg_scale, export_formats, debug_logs):
         # Run model
         model.cfg_val = float(cfg_scale)
         
-        for update in model.file2hair(str(img_path), str(job_dir)):
+        for update in model.file2hair(str(img_path), str(job_dir), cfg_val=float(cfg_scale), progress=progress):
             if isinstance(update, tuple) and update[0] == "status":
                 text, time_est = translate_status(update[1])
                 add_log(update[1])
