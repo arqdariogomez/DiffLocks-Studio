@@ -23,7 +23,7 @@ license: other
 
 This repository is a modification of **DiffLocks**, the original project by **Meshcapade GmbH** and the **Max Planck Institute for Intelligent Systems**.
 
-### 🎯 Our Mission: Democratization
+### 🎯 The Mission: Democratization
 The primary goal of **DiffLocks Studio** is to democratize access to this cutting-edge technology. We have optimized the original code to run on consumer-grade hardware (such as an 8GB GPU) and accessible platforms like **Pinokio**, removing the entry barrier of requiring high-performance workstations.
 
 ### 💡 Personal Motivation
