@@ -21,7 +21,8 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 
 echo.
 echo Starting Docker containers...
-docker compose up
+docker compose down
+docker compose up --build
 
 if %errorlevel% neq 0 (
     echo.

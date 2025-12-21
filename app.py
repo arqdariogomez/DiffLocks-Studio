@@ -525,7 +525,7 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()), 
-            generate_btn: gr.Button(interactive=False),
+            generate_btn: gr.update(interactive=False),
             plot_3d: create_empty_3d_plot(),
             preview_2d: render_image_html(None)
         }
@@ -595,12 +595,12 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
             result_group: gr.update(visible=True),
             download_file: final_files,
             debug_console: render_debug_console(log_capture.get_logs()),
-            generate_btn: gr.Button(interactive=True)
+            generate_btn: gr.update(interactive=True)
         }
         
     except Exception as e:
         log_capture.add_log(f"❌ Error: {str(e)}")
-        yield { status_html: create_error_html(str(e)), debug_console: render_debug_console(log_capture.get_logs()), generate_btn: gr.Button(interactive=True) }
+        yield { status_html: create_error_html(str(e)), debug_console: render_debug_console(log_capture.get_logs()), generate_btn: gr.update(interactive=True) }
     finally:
         log_capture.stop()
 
