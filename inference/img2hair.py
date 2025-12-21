@@ -162,6 +162,7 @@ class DiffLocksInference():
             yield "status", "🦖 2/5: Extracting Features (DINOv2)..."
             if progress is not None: progress(0.1, desc="Extracting DINO features...")
             dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', verbose=False).to("cuda" if torch.cuda.is_available() else "cpu")
+            dinov2.float() # Force float32
             tf = T.Compose([T.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
             out = dinov2.forward_features(tf(rgb_img_gpu))
             patch = out["x_norm_patchtokens"]
@@ -180,6 +181,7 @@ class DiffLocksInference():
             yield "log", "⏳ Loading diffusion model..."
             conf = K.config.load_config(self.paths['config'])
             model = K.config.make_denoiser_wrapper(conf)(K.config.make_model(conf).to("cuda" if torch.cuda.is_available() else "cpu"))
+            model.float() # Force float32
             # DEBUG PATCH
 
             if not os.path.exists(self.paths['diff']):
@@ -197,6 +199,7 @@ class DiffLocksInference():
                 raise e
             # END DEBUG PATCH
             model.inner_model.load_state_dict(ckpt['model_ema'])
+            model.float() # Force float32 again after loading weights (in case weights were half)
             print(f"💎 Using Full Precision (float32) - VRAM: {cfg.vram_gb:.1f}GB")
             del ckpt; force_cleanup()
             model.eval(); model.inner_model.condition_dropout_rate = 0.0
