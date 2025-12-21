@@ -205,10 +205,15 @@ class DiffLocksInference():
             model.eval(); model.inner_model.condition_dropout_rate = 0.0
             
             # Embeddings precision
-            cls_tok_gpu = cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu")
-            patch_emb_gpu = patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu")
+            cls_tok_gpu = cls_tok_cpu.to("cuda" if torch.cuda.is_available() else "cpu").float()
+            patch_emb_gpu = patch_emb_cpu.to("cuda" if torch.cuda.is_available() else "cpu").float()
 
             extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_gpu, "final_latent": patch_emb_gpu}}}
+            
+            # DEBUG DTYPES
+            print(f"DEBUG: Model dtype: {next(model.parameters()).dtype}")
+            print(f"DEBUG: cls_tok_gpu dtype: {cls_tok_gpu.dtype}")
+            print(f"DEBUG: patch_emb_gpu dtype: {patch_emb_gpu.dtype}")
             
             yield "log", f"🎨 Starting sampling ({self.nr_iters_denoise} steps)... This will take a few minutes."
             

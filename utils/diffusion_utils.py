@@ -9,7 +9,7 @@ def sample_images(nr_images, model_ema, model_config, nr_iters=100, extra_args={
     sigma_max = model_config['sigma_max']
     size = model_config['input_size']
     n_per_proc = nr_images
-    dtype = torch.float16 if cfg.use_half else torch.float32
+    dtype = torch.float32
     x = torch.randn([1, n_per_proc, model_config['input_channels'], size[0], size[1]], dtype=dtype).to("cuda" if torch.cuda.is_available() else "cpu")
     x = x[0] * sigma_max
     model_fn = model_ema
@@ -26,7 +26,7 @@ def sample_images_cfg(nr_images, cfg_val, cfg_interval, model_ema, model_config,
     sigma_max = model_config['sigma_max']
     size = model_config['input_size']
     n_per_proc = nr_images
-    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    dtype = torch.float32
     x = torch.randn([1, n_per_proc, model_config['input_channels'], size[0], size[1]], dtype=dtype).to("cuda" if torch.cuda.is_available() else "cpu")
     x = x[0] * sigma_max
     model_fn = model_ema
