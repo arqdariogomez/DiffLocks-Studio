@@ -253,27 +253,15 @@ conf_path = cfg.repo_dir / "configs/config_scalp_texture_conditional.json"
 
 model = None
 
-def load_model(use_half=None):
+def load_model():
     global model
-    if model is not None:
-        # Check if precision changed
-        current_half = getattr(model, 'use_half', cfg.use_half)
-        target_half = use_half if use_half is not None else cfg.use_half
-        if current_half == target_half:
-            return
-        else:
-            print(f"🔄 Precision changed ({current_half} -> {target_half}), reloading model...")
-            del model
-            force_cleanup()
-            model = None
+    if model is not None: return
 
     if not ckpt_files or not vae_files:
         raise FileNotFoundError("Checkpoints missing!")
     
-    target_half = use_half if use_half is not None else cfg.use_half
-    print(f"Loading Model on {DEVICE} (Half={target_half}): {ckpt_files[0].name}")
+    print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
-    model.use_half = target_half # Store current precision
     print("✅ Model loaded!")
 
 # --- 6. UTILITY FUNCTIONS ---
@@ -346,20 +334,17 @@ def export_blender(npz_path, output_base, formats):
 
 # --- 7. MAIN INFERENCE FUNCTION ---
 
-def run_inference(image, cfg_scale, export_formats, low_vram, progress=gr.Progress()):
+def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
     log_capture = VerboseLogCapture()
     log_capture.start()
     tracker = ProgressTracker(is_cpu=IS_CPU)
-    
-    # Override precision
-    use_half = low_vram
     
     job_id = f"job_{int(time.time())}"
     job_dir = cfg.output_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     
     log_capture.add_log(f"🚀 JOB STARTED: {job_id}")
-    log_capture.add_log(f"Device: {DEVICE} | Precision: {'float16' if use_half else 'float32'}")
+    log_capture.add_log(f"Device: {DEVICE} | Precision: float32")
     
     try:
         if image is None: raise ValueError("Upload an image first!")
@@ -368,8 +353,8 @@ def run_inference(image, cfg_scale, export_formats, low_vram, progress=gr.Progre
         tracker.set_phase("init")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()), generate_btn: gr.Button(interactive=False) }
         
-        # Load model with specific precision
-        load_model(use_half=use_half)
+        # Load model
+        load_model()
         
         img_path = job_dir / "input.png"
         if isinstance(image, str): shutil.copy(image, img_path)
@@ -377,7 +362,7 @@ def run_inference(image, cfg_scale, export_formats, low_vram, progress=gr.Progre
         
         # Run model
         model.cfg_val = float(cfg_scale)
-        for update in model.file2hair(str(img_path), str(job_dir), cfg_val=float(cfg_scale), progress=progress, use_half=use_half):
+        for update in model.file2hair(str(img_path), str(job_dir), cfg_val=float(cfg_scale), progress=progress):
             if isinstance(update, tuple):
                 dtype, val = update[0], update[1]
                 if dtype == "status":
@@ -451,7 +436,6 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLoc
         with gr.Column(scale=1):
             image_input = gr.Image(type="filepath", label="Input Portrait", height=300)
             cfg_slider = gr.Slider(1, 7, 2.5, step=0.1, label="CFG Scale")
-            low_vram_toggle = gr.Checkbox(value=cfg.use_half, label="Low VRAM Mode (float16)", info="Enable if you have < 8GB VRAM. Disable for better stability.")
             format_checkboxes = gr.CheckboxGroup(choices=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"], value=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"], label="Additional Exports")
             generate_btn = gr.Button("🚀 GENERATE HAIR", variant="primary", size="lg")
         
@@ -467,7 +451,7 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLoc
     
     generate_btn.click(
         fn=run_inference,
-        inputs=[image_input, cfg_slider, format_checkboxes, low_vram_toggle],
+        inputs=[image_input, cfg_slider, format_checkboxes],
         outputs=[plot_3d, preview_2d, status_html, result_group, download_file, debug_console, generate_btn]
     )
 
