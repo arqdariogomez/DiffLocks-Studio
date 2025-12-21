@@ -432,13 +432,20 @@ def run_inference(image, cfg_scale, export_formats, debug_logs, progress=gr.Prog
         model.cfg_val = float(cfg_scale)
         
         for update in model.file2hair(str(img_path), str(job_dir), cfg_val=float(cfg_scale), progress=progress):
-            if isinstance(update, tuple) and update[0] == "status":
-                text, time_est = translate_status(update[1])
-                add_log(update[1])
-                yield {
-                    status_html: create_status_html(text, time_est),
-                    debug_console: logs
-                }
+            if isinstance(update, tuple):
+                dtype, val = update[0], update[1]
+                if dtype == "status":
+                    text, time_est = translate_status(val)
+                    add_log(val)
+                    yield {
+                        status_html: create_status_html(text, time_est),
+                        debug_console: logs
+                    }
+                elif dtype == "log":
+                    add_log(val)
+                    yield { debug_console: logs }
+                elif dtype == "error":
+                    raise Exception(val)
         
         # Verify output
         npz_path = job_dir / "difflocks_output_strands.npz"

@@ -250,24 +250,27 @@ class DiffLocksInference():
             
             # 4. DECODING
             yield "status", "🧬 4/5: Decoding in 3D (CPU)..."
+            yield "log", "⏳ Loading Strand VAE/Codec..."
             if progress is not None: progress(0.85, desc="Decoding strands...")
             codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).cpu()
             codec.load_state_dict(torch.load(self.paths['codec'], map_location='cpu', weights_only=False))
             codec.eval()
             
-            yield "log", f"⏳ Processing {self.nr_chunks_decode_strands} geometry chunks..."
+            yield "log", f"⏳ Processing {self.nr_chunks_decode_strands} geometry chunks (this may take a minute)..."
             
             # Ensure float32 for decoder
             scalp_texture = scalp_cpu[:,0:-1].float()
             density_f32 = density.float()
 
-
             strands, _ = sample_strands_from_scalp_with_density(
                 scalp_texture, density_f32, codec, self.norm_dict_cpu, 
                 self.mesh_data_cpu, self.tbn_space_to_world, self.nr_chunks_decode_strands)
             
-            del codec, scalp_cpu, density; force_cleanup()
-            yield "log", "✅ 3D Geometry built"
+            if strands is None or strands.shape[0] == 0:
+                yield "error", "Decoding failed: No strands were generated. Check density map sum."
+                return
+
+            yield "log", f"✅ 3D Geometry built: {strands.shape[0]} strands generated"
             
             # 5. SAVE
             yield "status", "💾 5/5: Saving Files..."
