@@ -1,9 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Set UTF-8 encoding
-chcp 65001 >nul
-
 echo DiffLocks Studio - Docker Launcher
 echo ========================================
 
@@ -79,6 +76,9 @@ if %errorlevel% neq 0 (
     echo GPU support detected!
 )
 echo.
+
+echo [DEBUG] GPU Check finished. Press any key to start Docker Compose...
+pause
 
 echo Starting Docker containers...
 echo Once ready, open http://localhost:7860 in your browser.
