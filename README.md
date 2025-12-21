@@ -26,9 +26,6 @@ This repository is a modification of **DiffLocks**, the original project by **Me
 ### 🎯 The Mission: Democratization
 The primary goal of **DiffLocks Studio** is to democratize access to this cutting-edge technology. We have optimized the original code to run on consumer-grade hardware (such as an 8GB GPU) and accessible platforms like **Pinokio**, removing the entry barrier of requiring high-performance workstations.
 
-### 💡 Personal Motivation
-This project was born from a desire to learn, gain experience in deploying complex diffusion models, and contribute to the community by providing powerful tools for creators worldwide.
-
 ---
 
 ## ⚖️ Attribution and License
@@ -59,18 +56,33 @@ This project was born from a desire to learn, gain experience in deploying compl
    - Paste this repository URL and hit **Enter**.
    - **Tip**: When the console says the app is ready at `0.0.0.0`, use [http://localhost:7860/](http://localhost:7860/) in your browser for the best compatibility.
 3. **Google Colab**: [Colab Notebook](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a). (Currently being refined to ensure 100% stability).
-4. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). A great "try-it-now" option. It becomes the #1 choice if a ZeroGPU grant is active; otherwise, you may need to wait in a queue.
+4. **Hugging Face Space**: [HF Space](https://huggingface.co/spaces/arqdariogomez/DiffLocks-Studio). A great "try-it-now" option. It becomes the #1 choice if a ZeroGPU grant is active.
 
 ---
 
 ## 🧠 Model Setup (Checkpoints)
 
-Due to licensing restrictions, model weights are not included. Here is how to set them up:
+Due to licensing restrictions, model weights are not included. To ensure privacy and license compliance, we use the **Secrets** system.
 
-### 🔐 Using "Secrets" (Kaggle / Colab)
-For cloud platforms, the best and most private way is to use the **Secrets** add-on. Store your `HF_TOKEN` there. This ensures your credentials remain private while allowing the app to securely download the necessary assets for the first run.
+### 🔐 Option A: Automatic Download (Cloud Platforms)
+Using **Secrets** is the best option because it keeps your API key private and ensures you are using the models under the correct research license.
 
-### 📥 Manual Download (Local / Docker)
+#### 1. Generate your Hugging Face Token
+- Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+- Click **New token**.
+- Name it (e.g., "DiffLocks") and set the type to **Read**.
+- Copy the generated token (starts with `hf_...`).
+
+#### 2. Add to your Platform
+- **Kaggle**: Go to **Add-ons** -> **Secrets**. Add a new secret with Label `HF_TOKEN` and paste your token in the Value field. Ensure the "Attached" checkbox is checked.
+- **Colab**: Click the **Key icon** (Secrets) in the left sidebar. Add a new secret named `HF_TOKEN` and paste your token. Enable "Notebook access".
+
+#### 3. Run the App
+The first time you run the app, it will detect your `HF_TOKEN` and automatically download the required checkpoints (~4GB) securely.
+
+---
+
+### 📥 Option B: Manual Download (Local / Docker)
 If you are running locally or want full control:
 1. Download the checkpoints from the [original Meshcapade repository](https://github.com/Meshcapade/difflocks).
 2. Create a `checkpoints` folder in the project root.
