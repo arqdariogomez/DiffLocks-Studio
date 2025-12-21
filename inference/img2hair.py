@@ -214,12 +214,14 @@ class DiffLocksInference():
 
             extra = {'latents_dict': {"dinov2": {"cls_token": cls_tok_gpu, "final_latent": patch_emb_gpu}}}
             
-            yield "log", "🎨 Starting sampling... This will take a few minutes."
+            yield "log", f"🎨 Starting sampling ({self.nr_iters_denoise} steps)... This will take a few minutes."
             
             def p_callback(info):
                 if progress is not None:
                     i = info['i']
                     progress(0.2 + 0.6 * (i / self.nr_iters_denoise), desc=f"Denoising {i}/{self.nr_iters_denoise}")
+                if info['i'] % 10 == 0:
+                    print(f"🔄 Diffusion: Step {info['i']}/{self.nr_iters_denoise} (sigma={info['sigma']:.4f})")
 
             # Sampling (Sin autocast para igualar referencia)
             scalp = sample_images_cfg(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra, callback=p_callback)
