@@ -292,17 +292,83 @@ def generate_preview_2d(npz_path, output_dir):
 def generate_preview_3d(npz_path):
     try:
         import plotly.graph_objects as go
-        data = np.load(npz_path)['positions']
-        step = max(1, len(data) // 30000)
-        sample = data[::step][:, ::8, :]
-        pts = sample.reshape(-1, 3)
-        x, y, z = pts[:, 0], -pts[:, 2], pts[:, 1]
-        colors = np.tile(np.linspace(0.3, 1, sample.shape[1]), sample.shape[0])
-        def add_nan(arr): return np.hstack([arr.reshape(sample.shape[:2]), np.full((sample.shape[0], 1), np.nan)]).flatten()
-        fig = go.Figure(data=[go.Scatter3d(x=add_nan(x), y=add_nan(y), z=add_nan(z), mode='lines', line=dict(width=1.5, color=np.hstack([colors, np.zeros(sample.shape[0])]), colorscale=[[0, '#505050'], [1, 'white']], showscale=False))])
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False), bgcolor='rgba(0,0,0,0)'), margin=dict(l=0, r=0, b=0, t=0), height=500)
+        data = np.load(npz_path)
+        positions = data['positions']
+        num_strands, points_per_strand, _ = positions.shape
+        
+        # Downsample for performance
+        target_strands = max(100, num_strands // 2)
+        strand_step = max(1, num_strands // target_strands)
+        target_points = 32
+        point_step = max(1, points_per_strand // target_points)
+        
+        subset = positions[::strand_step, ::point_step, :]
+        n_s, n_p, _ = subset.shape
+        
+        x = subset[:, :, 0]
+        y = -subset[:, :, 2]
+        z = subset[:, :, 1]
+        
+        # Rotate 180
+        theta = np.radians(180)
+        c, s = np.cos(theta), np.sin(theta)
+        fx = x * c + y * s
+        fy = -x * s + y * c
+        fz = z
+        
+        nan_col = np.full((n_s, 1), np.nan)
+        x_plot = np.hstack([fx, nan_col]).flatten()
+        y_plot = np.hstack([fy, nan_col]).flatten()
+        z_plot = np.hstack([fz, nan_col]).flatten()
+        
+        # Build colors to match points + NaNs
+        np.random.seed(42)
+        colors_flat = []
+        for s_idx in range(n_s):
+            brightness_var = 0.85 + np.random.random() * 0.30
+            for p_idx in range(n_p):
+                t = p_idx / max(1, n_p - 1)
+                base_val = 0.2 + t * 0.75
+                val = np.clip(base_val * brightness_var, 0.1, 1.0)
+                colors_flat.append(val)
+            colors_flat.append(0.5) # Color for NaN point (won't be seen)
+        
+        colorscale = [
+            [0.0, 'rgb(30,30,30)'],
+            [0.2, 'rgb(60,60,60)'],
+            [0.4, 'rgb(100,100,100)'],
+            [0.6, 'rgb(160,160,160)'],
+            [0.8, 'rgb(210,210,210)'],
+            [1.0, 'rgb(250,250,250)']
+        ]
+        
+        fig = go.Figure(data=[go.Scatter3d(
+            x=x_plot, y=y_plot, z=z_plot,
+            mode='lines',
+            line=dict(width=2, color=colors_flat, colorscale=colorscale, showscale=False),
+            hoverinfo='none'
+        )])
+        
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            scene=dict(
+                xaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showbackground=False),
+                yaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showbackground=False),
+                zaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showbackground=False),
+                bgcolor='rgba(0,0,0,0)',
+                dragmode='orbit',
+                camera=dict(eye=dict(x=0, y=-1.8, z=0.3), up=dict(x=0, y=0, z=1)),
+                aspectmode='data'
+            ),
+            margin=dict(l=0, r=0, b=0, t=0),
+            height=550,
+            showlegend=False
+        )
         return fig
-    except: return None
+    except Exception as e:
+        print(f"3D Preview Error: {e}")
+        return None
 
 def export_obj(npz_path, obj_path):
     try:
@@ -405,12 +471,16 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
             for f in [str(npz_path), preview_img, str(obj_path)] + blender_outputs:
                 if f and Path(f).exists(): zf.write(f, Path(f).name)
         
+        # Final yield with all files
+        final_files = [str(zip_path), str(npz_path), preview_img, str(obj_path)] + blender_outputs
+        final_files = [f for f in final_files if f and Path(f).exists()]
+        
         yield {
             plot_3d: plot_3d_fig,
             preview_2d: preview_img,
             status_html: create_complete_html(),
             result_group: gr.Group(visible=True),
-            download_file: str(zip_path),
+            download_file: final_files,
             debug_console: render_debug_console(log_capture.get_logs()),
             generate_btn: gr.Button(interactive=True)
         }
@@ -424,12 +494,128 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
 # --- 8. GRADIO UI ---
 
 CSS = """
-.gradio-container { max-width: 100% !important; }
+/* === FORCE DARK ON ALL === */
+* {
+    --block-label-background-fill: #3f3f46 !important;
+    --block-label-text-color: #fafafa !important;
+    --block-title-background-fill: #3f3f46 !important;
+    --block-title-text-color: #fafafa !important;
+}
+
+/* === IMAGE LABEL FIX === */
+.gr-image .label-wrap,
+.gr-image > div:first-child > span,
+[data-testid="image"] .label-wrap {
+    background: #3f3f46 !important;
+    color: #fafafa !important;
+    max-height: 32px !important;
+}
+
+/* === CHECKBOX TEXT FIX === */
+.gr-checkbox-group label,
+.gr-checkbox-group label span,
+.gr-checkbox-group input + span,
+.checkbox-group label,
+.checkbox-group label span,
+[data-testid="checkbox-group"] label,
+[data-testid="checkbox-group"] label span,
+.gr-checkbox-group .gr-checkbox label,
+.gr-checkbox-group .gr-checkbox span {
+    color: #e4e4e7 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* === ACCORDION TEXT FIX === */
+.gr-accordion,
+.gr-accordion summary,
+.gr-accordion summary span,
+.gr-accordion > div,
+details,
+details summary,
+details summary span,
+details > div {
+    color: #e4e4e7 !important;
+    background-color: #27272a !important;
+}
+
+/* === HIDE FOOTER === */
 footer { display: none !important; }
-.debug-console { font-family: monospace; }
+
+/* === DISABLE LOADING ANIMATIONS === */
+.generating, .loading, .pending {
+    animation: none !important;
+    opacity: 1 !important;
+}
+
+/* === PLOTLY === */
+.gr-plot, [data-testid="plot"] {
+    background: #18181b !important;
+    border: 1px solid #3f3f46 !important;
+    border-radius: 8px !important;
+    min-height: 550px !important;
+}
+
+.js-plotly-plot .modebar {
+    background: rgba(39, 39, 42, 0.9) !important;
+}
+
+.js-plotly-plot .modebar-btn {
+    color: #a1a1aa !important;
+}
+
+.js-plotly-plot .modebar-btn:hover {
+    color: #fafafa !important;
+}
+
+/* === SCROLLBAR === */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #18181b; }
+::-webkit-scrollbar-thumb { background: #52525b; border-radius: 4px; }
 """
 
-with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLocks Studio") as demo:
+dark_theme = gr.themes.Base(
+    primary_hue=gr.themes.colors.indigo,
+    secondary_hue=gr.themes.colors.zinc,
+    neutral_hue=gr.themes.colors.zinc,
+).set(
+    body_background_fill="#1f1f23",
+    body_background_fill_dark="#1f1f23",
+    background_fill_primary="#27272a",
+    background_fill_primary_dark="#27272a",
+    background_fill_secondary="#18181b",
+    background_fill_secondary_dark="#18181b",
+    block_background_fill="#27272a",
+    block_background_fill_dark="#27272a",
+    block_border_color="#3f3f46",
+    block_border_color_dark="#3f3f46",
+    block_label_background_fill="#3f3f46",
+    block_label_background_fill_dark="#3f3f46",
+    block_label_text_color="#fafafa",
+    block_label_text_color_dark="#fafafa",
+    block_title_background_fill="#3f3f46",
+    block_title_background_fill_dark="#3f3f46",
+    block_title_text_color="#fafafa",
+    block_title_text_color_dark="#fafafa",
+    input_background_fill="#18181b",
+    input_background_fill_dark="#18181b",
+    input_border_color="#3f3f46",
+    input_border_color_dark="#3f3f46",
+    body_text_color="#e4e4e7",
+    body_text_color_dark="#e4e4e7",
+    body_text_color_subdued="#a1a1aa",
+    body_text_color_subdued_dark="#a1a1aa",
+    button_primary_background_fill="#6366f1",
+    button_primary_background_fill_dark="#6366f1",
+    button_primary_background_fill_hover="#818cf8",
+    button_primary_background_fill_hover_dark="#818cf8",
+    button_primary_text_color="#ffffff",
+    button_primary_text_color_dark="#ffffff",
+    border_color_primary="#3f3f46",
+    border_color_primary_dark="#3f3f46",
+)
+
+with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio") as demo:
     gr.Markdown("## 💇‍♀️ DiffLocks Studio")
     
     with gr.Row():
@@ -445,7 +631,7 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue"), css=CSS, title="DiffLoc
                 with gr.Tabs():
                     with gr.Tab("🎨 3D Preview"): plot_3d = gr.Plot()
                     with gr.Tab("📸 2D Renders"): preview_2d = gr.Image(interactive=False)
-                download_file = gr.File(label="📥 Download Results")
+                download_file = gr.File(label="📥 Download Results", file_count="multiple")
             with gr.Accordion("🛠️ Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))
     

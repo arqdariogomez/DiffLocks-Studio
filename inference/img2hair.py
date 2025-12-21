@@ -19,7 +19,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 DEFAULT_BODY_DATA_DIR = "data_loader/difflocks_bodydata"
-# Pre-calculamos en CPU para evitar errores
+# Pre-calculate in CPU to avoid errors
 tbn_space_to_world_cpu = torch.tensor([[1.,0.,0.],[0.,0.,1.],[0.,-1.,0.]]).float()
 torch.set_num_threads(4)
 
@@ -83,7 +83,7 @@ def force_cleanup():
     gc.collect()
     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-# CROP FACE 2.8x (Referencia Correcta)
+# CROP FACE 2.8x (Correct Reference)
 def crop_face(image, face_landmarks, output_size, crop_size_multiplier=2.8):
     h, w, _ = image.shape
     xs = [l.x for l in face_landmarks]; ys = [l.y for l in face_landmarks]
@@ -132,14 +132,14 @@ class DiffLocksInference():
         self.mesh_data_cpu = {k: v.cpu() if torch.is_tensor(v) else v for k, v in self.scalp_mesh_data.items()}
         self.tbn_space_to_world = tbn_space_to_world_cpu_safe
 
-    # AHORA ES UN GENERADOR (YIELD)
+    # NOW A GENERATOR (YIELD)
     @torch.inference_mode()
     def rgb2hair(self, rgb_img, out_path=None, cfg_val=None, progress=None):
         if out_path: os.makedirs(out_path, exist_ok=True)
         actual_cfg = cfg_val if cfg_val is not None else self.cfg_val
         
         if progress is not None: progress(0, desc="Starting...")
-        # LOG INICIAL
+        # INITIAL LOG
         yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise} | Precision=float32"
 
         try:
@@ -156,7 +156,7 @@ class DiffLocksInference():
             del frame
             rgb_img_gpu = torch.tensor(cropped_face).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.0
             rgb_img_cpu = rgb_img_gpu.cpu().clone() # Backup para guardar al final
-            yield "log", "✅ Rostro detectado y recortado (Zoom 2.8x)"
+            yield "log", "✅ Face detected and cropped (Zoom 2.8x)"
             
             # 2. DINO
             yield "status", "🦖 2/5: Extracting Features (DINOv2)..."
@@ -224,7 +224,7 @@ class DiffLocksInference():
                 if info['i'] % 10 == 0:
                     print(f"🔄 Diffusion: Step {info['i']}/{self.nr_iters_denoise} (sigma={info['sigma']:.4f})")
 
-            # Sampling (Sin autocast para igualar referencia)
+            # Sampling (No autocast to match reference)
             scalp = sample_images_cfg(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra, callback=p_callback)
             
             # NaN Check
