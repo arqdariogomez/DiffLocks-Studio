@@ -16,6 +16,7 @@ license: other
 
 [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1sVM0G5sI4xqaZvjmBjsFYDwZwFRQBnmC#scrollTo=8DfIC_lPUu4a)
 [![Original Repo](https://img.shields.io/badge/Original-Meshcapade-blue)](https://github.com/Meshcapade/difflocks)
+A kaggle notebook is under development, is currently working, I am just refining some details.
 
 ## 🌟 About this Project
 
@@ -95,6 +96,7 @@ DiffLocks Studio includes tools to bring your 3D hair into Blender:
 1. **Generate**: After inference, download the `.npz` file.
 2. **Import**: Use the `npz_blender_importer.py` script inside Blender to load the strands as native curves.
 3. **Addon**: You can also install the `blender_addon` folder as a standard Blender addon.
+Alternatively you can generate .blend (with native hair curves), .usd, and alembic .abc
 
 ---
 
