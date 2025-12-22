@@ -343,6 +343,8 @@ def generate_preview_3d(npz_path, log_capture=None):
         num_strands, points_per_strand, _ = positions.shape
         
         if log_capture: log_capture.add_log(f"🎨 3D Interactive: Processing {num_strands} strands...")
+        
+        target_strands = max(100, num_strands // 2)
         strand_step = max(1, num_strands // target_strands)
         target_points = 32
         point_step = max(1, points_per_strand // target_points)
@@ -572,10 +574,12 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
         obj_path = job_dir / "hair.obj"
         export_obj(npz_path, obj_path, log_capture)
+        yield { debug_console: render_debug_console(log_capture.get_logs()) }
         
         tracker.set_phase("blender")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
         blender_outputs = export_blender(npz_path, job_dir, export_formats, log_capture)
+        yield { debug_console: render_debug_console(log_capture.get_logs()) }
         
         tracker.set_phase("zip")
         yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
