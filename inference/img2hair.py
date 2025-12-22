@@ -252,22 +252,37 @@ class DiffLocksInference():
             yield "log", f"✅ Neural texture generated (density sum: {density.sum():.1f})"
             
             # 4. DECODING
-            yield "status", "🧬 4/5: Decoding in 3D (CPU)..."
+            yield "status", "🧬 4/5: Decoding in 3D (GPU)..."
             yield "log", "⏳ Loading Strand VAE/Codec..."
             if progress is not None: progress(0.85, desc="Decoding strands...")
-            codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).cpu()
-            codec.load_state_dict(torch.load(self.paths['codec'], map_location='cpu', weights_only=False))
+            
+            # Move codec to GPU for speed
+            codec_device = "cuda" if torch.cuda.is_available() else "cpu"
+            codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).to(codec_device)
+            codec.load_state_dict(torch.load(self.paths['codec'], map_location=codec_device, weights_only=False))
             codec.eval()
             
-            yield "log", f"⏳ Processing {self.nr_chunks_decode_strands} geometry chunks (this may take a minute)..."
+            # Move normalization dict to GPU
+            norm_dict_gpu = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.normalization_dict.items()}
+            mesh_data_gpu = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.scalp_mesh_data.items()}
             
-            # Ensure float32 for decoder
-            scalp_texture = scalp_cpu[:,0:-1].float()
-            density_f32 = density.float()
+            yield "log", f"⏳ Processing {self.nr_chunks_decode_strands} geometry chunks (GPU Accelerated)..."
+            
+            # Ensure GPU for decoder
+            scalp_texture = scalp_cpu[:,0:-1].to(codec_device).float()
+            density_f32 = density.to(codec_device).float()
 
+            def decoding_callback(i, total):
+                if i % 10 == 0:
+                    print(f"🧬 Decoding: Chunk {i}/{total}")
+            
+            # We wrap the generator to allow yielding logs from within the decoding loop
+            # But since sample_strands is a function, we use a custom callback that we can catch
+            
             strands, _ = sample_strands_from_scalp_with_density(
-                scalp_texture, density_f32, codec, self.norm_dict_cpu, 
-                self.mesh_data_cpu, self.tbn_space_to_world, self.nr_chunks_decode_strands)
+                scalp_texture, density_f32, codec, norm_dict_gpu, 
+                mesh_data_gpu, self.tbn_space_to_world, self.nr_chunks_decode_strands,
+                callback=decoding_callback)
             
             if strands is None or strands.shape[0] == 0:
                 yield "error", "Decoding failed: No strands were generated. Check density map sum."

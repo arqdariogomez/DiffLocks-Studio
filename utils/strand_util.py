@@ -551,7 +551,7 @@ def sample_from_density_map(density_map, downsample_lvl=None):
 
 def sample_strands_from_scalp_with_density(scalp_texture, density_map, strand_codec, normalization_dict,
                                            scalp_mesh_data, tbn_space_to_world_func, nr_chunks=300,
-                                           upsample_multiplier=3):
+                                           upsample_multiplier=3, callback=None):
     if density_map.shape[2] != scalp_texture.shape[2]:
         # downsample the density to be the same size as the scalp texture
         density_map = torch.nn.functional.interpolate(density_map,
@@ -637,9 +637,11 @@ def sample_strands_from_scalp_with_density(scalp_texture, density_map, strand_co
     
     selected_latents_chunked = torch.chunk(selected_latents, nr_chunks)
     pred_points_list = []
-    for selected_latents_cur in selected_latents_chunked:
+    for i, selected_latents_cur in enumerate(selected_latents_chunked):
         if selected_latents_cur.shape[0] == 0:
             continue  # Skip empty chunks
+        if callback:
+            callback(i, nr_chunks)
         pred_dict = strand_codec.decoder(selected_latents_cur, None, normalization_dict)
         pred_points = pred_dict["strand_positions"]
         pred_points_list.append(pred_points)
