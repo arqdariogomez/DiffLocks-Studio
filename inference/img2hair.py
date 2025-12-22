@@ -161,10 +161,14 @@ class DiffLocksInference():
             # 2. DINO
             yield "status", "🦖 2/5: Extracting Features (DINOv2)..."
             if progress is not None: progress(0.1, desc="Extracting DINO features...")
-            dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', verbose=False).to("cuda" if torch.cuda.is_available() else "cpu")
-            dinov2.float() # Force float32
-            tf = T.Compose([T.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
-            out = dinov2.forward_features(tf(rgb_img_gpu))
+            
+            # Load DINOv2 model with caching
+            from inference.load_dinov2 import load_dinov2
+            dinov2, tf = load_dinov2(device=rgb_img_gpu.device)
+            
+            # Extract features
+            with torch.no_grad():
+                out = dinov2.forward_features(tf(rgb_img_gpu))
             patch = out["x_norm_patchtokens"]
             cls_tok = out["x_norm_clstoken"]
             h = w = int(patch.shape[1]**0.5)
@@ -276,12 +280,30 @@ class DiffLocksInference():
                 if i % 10 == 0:
                     print(f"🧬 Decoding: Chunk {i}/{total}")
             
-            # We wrap the generator to allow yielding logs from within the decoding loop
-            # But since sample_strands is a function, we use a custom callback that we can catch
+            # Create a wrapper function to ensure all tensors are on the same device
+            def tbn_space_to_world_gpu(root_uv, strands_positions, scalp_mesh_data):
+                # Ensure all inputs are on the same device as the model
+                device = codec.device
+                root_uv = root_uv.to(device)
+                strands_positions = strands_positions.to(device)
+                
+                # Convert to CPU for the actual computation if needed
+                root_uv_cpu = root_uv.cpu()
+                strands_positions_cpu = strands_positions.cpu()
+                
+                # Call the original function
+                result = tbn_space_to_world_cpu_safe(root_uv_cpu, strands_positions_cpu, scalp_mesh_data)
+                
+                # Return the result on the same device as the input
+                return result.to(device)
             
+            # Use the GPU version of the function
+            tbn_func = tbn_space_to_world_gpu if torch.cuda.is_available() else tbn_space_to_world_cpu_safe
+            
+            # Call the function with the appropriate device-aware function
             strands, _ = sample_strands_from_scalp_with_density(
                 scalp_texture, density_f32, codec, norm_dict_gpu, 
-                mesh_data_gpu, self.tbn_space_to_world, self.nr_chunks_decode_strands,
+                mesh_data_gpu, tbn_func, self.nr_chunks_decode_strands,
                 callback=decoding_callback)
             
             if strands is None or strands.shape[0] == 0:

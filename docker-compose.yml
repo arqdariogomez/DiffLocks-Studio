@@ -6,6 +6,7 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - HF_TOKEN=${HF_TOKEN:-} # Optional: Pass HF_TOKEN from host environment
+      - TORCH_HOME=/app/.cache/torch # Store PyTorch cache in persistent volume
     ports:
       - "7860:7860"
     volumes:
@@ -14,6 +15,7 @@ services:
       - /app/inference/assets # Preserve assets from image
       - ./checkpoints:/app/checkpoints
       - ./studio_outputs:/app/studio_outputs
+      - ./torch_cache:/app/.cache/torch # Persistent volume for PyTorch cache
     deploy:
       resources:
         reservations:
@@ -21,4 +23,9 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [ gpu ]
-    command: python app.py
+    command: >
+      bash -c "mkdir -p /app/.cache/torch/hub/facebookresearch_dinov2_main && 
+      python app.py"
+
+volumes:
+  torch_cache:
