@@ -14,3 +14,4 @@ checkpoints_safe/
 # Block heavy 3D files
 *.blend
 *.blend1
+torch_cache/

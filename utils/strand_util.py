@@ -636,20 +636,29 @@ def sample_strands_from_scalp_with_density(scalp_texture, density_map, strand_co
         raise RuntimeError(f"No strands were sampled! Density map max was {d_max:.4f}. The model might have failed to generate hair for this image.")
     
     selected_latents_chunked = torch.chunk(selected_latents, nr_chunks)
-    pred_points_list = []
-    for i, selected_latents_cur in enumerate(selected_latents_chunked):
+    root_uv_chunked = torch.chunk(root_uv01, nr_chunks)
+    
+    pred_points_world_list = []
+    pred_points_tbn_list = []
+    
+    for i, (selected_latents_cur, root_uv_cur) in enumerate(zip(selected_latents_chunked, root_uv_chunked)):
         if selected_latents_cur.shape[0] == 0:
             continue  # Skip empty chunks
         if callback:
             callback(i, nr_chunks)
+            
+        # 1. Decode chunk to TBN space
         pred_dict = strand_codec.decoder(selected_latents_cur, None, normalization_dict)
-        pred_points = pred_dict["strand_positions"]
-        pred_points_list.append(pred_points)
-    strand_points_tbn = torch.cat(pred_points_list, 0)
-
-    # print("root_uv", root_uv01)
-    # print("root_uv", root_uv01.shape)
-    # print("root_uv min max", root_uv01.min(), root_uv01.max())
-    strand_points_world = tbn_space_to_world_func(root_uv01.cpu(), strand_points_tbn, scalp_mesh_data)
+        pred_points_tbn = pred_dict["strand_positions"]
+        
+        # 2. Transform chunk to World space immediately (Saves peak VRAM)
+        # We pass root_uv_cur directly to the function
+        pred_points_world = tbn_space_to_world_func(root_uv_cur, pred_points_tbn, scalp_mesh_data)
+        
+        pred_points_world_list.append(pred_points_world)
+        pred_points_tbn_list.append(pred_points_tbn)
+        
+    strand_points_world = torch.cat(pred_points_world_list, 0)
+    strand_points_tbn = torch.cat(pred_points_tbn_list, 0)
 
     return strand_points_world, strand_points_tbn

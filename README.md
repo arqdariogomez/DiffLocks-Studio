@@ -1,16 +1,22 @@
-# DiffLocks Studio (Universal V2)
+# 💇‍♀️ DiffLocks Studio
 
-AI-powered 3D hair generation from a single image. This project provides a unified interface for Pinokio, Docker, Kaggle, Colab, and local environments.
+High-fidelity 3D hair generation from a single image. This repository is an optimized fork designed for cross-platform reproducibility and performance.
 
----
+## 🚀 Key Features
 
-## 🚀 Getting Started (Choose your platform)
+- **Cross-Platform Support**: Unified configuration for **Pinokio**, **Docker**, **Kaggle**, **Colab**, and **HuggingFace Spaces**.
+- **GPU Optimization**: Native GPU decoding for geometry processing, eliminating CPU-GPU bottlenecks and improving stability in Docker.
+- **Precision Enforcement**: Uses **float32** throughout the pipeline to ensure maximum quality and avoid NaN errors common in half-precision.
+- **Advanced Export**: Support for **OBJ**, **Blender** (Hair Curves), **Alembic**, and **USD**.
+- **Interactive UI**: Modern Gradio interface with real-time progress tracking and interactive 3D preview.
+
+## 🏁 Getting Started (Choose your platform)
 
 | Platform | Best For | Setup Speed | GPU Required | Link |
 | :--- | :--- | :--- | :--- | :--- |
 | **Pinokio** | One-click local install | ⚡ Fast | Yes (NVIDIA) | [Install via Pinokio](https://pinokio.computer) |
 | **Docker** | Local power users | ⚡⚡ Very Fast | Yes (NVIDIA) | [See Instructions Below](#-docker-deployment-easiest-for-local) |
-| **Kaggle** | Free GPU (30h/week) | 🐢 Slow | No (Cloud) | [Open in Kaggle]([https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal)) |
+| **Kaggle** | Free GPU (30h/week) | 🐢 Slow | No (Cloud) | [Open in Kaggle](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal) |
 | **Colab** | Free/Paid GPU | 🐢 Slow | No (Cloud) | [Open in Colab](https://colab.research.google.com/github/arqdariogomez/DiffLocks-Studio/blob/main/Difflocks_v6d.ipynb) |
 
 ---
@@ -43,10 +49,11 @@ Even with manual setup, using the **Secrets** add-on is the best practice for pr
 
 ## ⚙️ Technical Improvements
 
-- **Platform-Aware Precision**: Automatic VRAM detection (toggles `float16` if < 12GB).
-- **Natten Fallback**: Native PyTorch implementation for Neighborhood Attention.
-- **Self-Update**: Integrated "Check for Updates" button in the UI.
-- **Blender Integration**: Native `.blend` export with modern hair curves.
+- **float32 Precision**: Forced full precision for maximum quality and stability (avoids float16 errors).
+- **Localized Interface**: UI and logs fully in English for a better experience.
+- **Platform Detection**: Automatic configuration for Pinokio, Docker, Kaggle, Colab, and HF Spaces.
+- **GPU Optimization**: Native GPU decoding to avoid bottlenecks and improve stability in Docker.
+- **Advanced Export**: Native support for Blender (Hair Curves), Alembic, and USD.
 
 ---
 

@@ -653,7 +653,7 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
 
 @torch.no_grad()
 def sample_dpmpp_2m_sde_cfg(model, x, sigmas, cfg_val, cfg_interval, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None, solver_type='midpoint'):
-    """DPM-Solver++(2M) SDE."""
+    """DPM-Solver++(2M) SDE. Yields (x, i, sigma) for progress tracking."""
 
     if solver_type not in {'heun', 'midpoint'}:
         raise ValueError('solver_type must be \'heun\' or \'midpoint\'')
@@ -663,62 +663,51 @@ def sample_dpmpp_2m_sde_cfg(model, x, sigmas, cfg_val, cfg_interval, extra_args=
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
 
-    # print("sigma min ", sigma_min)
-    # print("sigma max ", sigma_max)
-    # exit(1)
-
     old_denoised = None
     h_last = None
 
     for i in trange(len(sigmas) - 1, disable=disable):
-
-        #switch the cfg on or off depending on where in the schedule we are
-        #from https://arxiv.org/pdf/2404.07724
         cfg_interval_min=cfg_interval[0]
         cfg_interval_max=cfg_interval[1]
         if sigmas[i]>cfg_interval_min and sigmas[i]<cfg_interval_max:
             cfg_val_cur=cfg_val
         else:
             cfg_val_cur=1.0
-        # print("sigmas[i]",sigmas[i])
-        # print("cfg_interval", cfg_interval)
-        print("cfg_val_cur",cfg_val_cur, " for sigma ", sigmas[i])
+        
+        # print("cfg_val_cur",cfg_val_cur, " for sigma ", sigmas[i])
 
-
-        # denoised = model(x, sigmas[i] * s_in, **extra_args)
         if cfg_val_cur==1.0:
-            #no need to run the unconditional model, just run the conditional one
             denoised=model(x, sigmas[i] * s_in, **extra_args)
         else:
             denoised_uncond = model(x, sigmas[i] * s_in)
             denoised_cond = model(x, sigmas[i] * s_in, **extra_args)
             denoised = denoised_uncond + cfg_val_cur*(denoised_cond - denoised_uncond)
+        
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        # Yield progress
+        yield x, i, sigmas[i]
+
         if sigmas[i + 1] == 0:
-            # Denoising step
             x = denoised
         else:
-            # DPM-Solver++(2M) SDE
             t, s = -sigmas[i].log(), -sigmas[i + 1].log()
             h = s - t
             eta_h = eta * h
-
             x = sigmas[i + 1] / sigmas[i] * (-eta_h).exp() * x + (-h - eta_h).expm1().neg() * denoised
-
             if old_denoised is not None:
                 r = h_last / h
                 if solver_type == 'heun':
                     x = x + ((-h - eta_h).expm1().neg() / (-h - eta_h) + 1) * (1 / r) * (denoised - old_denoised)
                 elif solver_type == 'midpoint':
                     x = x + 0.5 * (-h - eta_h).expm1().neg() * (1 / r) * (denoised - old_denoised)
-
             if eta:
                 x = x + noise_sampler(sigmas[i], sigmas[i + 1]) * sigmas[i + 1] * (-2 * eta_h).expm1().neg().sqrt() * s_noise
 
         old_denoised = denoised
         h_last = h
-    return x
+    yield x, len(sigmas)-1, 0.0
 
 
 @torch.no_grad()

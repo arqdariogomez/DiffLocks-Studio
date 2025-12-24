@@ -56,15 +56,15 @@ IS_CPU = (DEVICE == "cpu")
 # --- 2. KAGGLE UI CONSTANTS ---
 PHASES = [
     ("init", "🚀 Initializing", 5, 0.00, 0.01),
-    ("1/5", "📸 Preprocessing image", 15, 0.01, 0.03),
+    ("1/5", "� Detecting Face and Geometry", 15, 0.01, 0.03),
     ("2/5", "🔍 Extracting features", 45, 0.03, 0.08),
     ("3/5", "✨ Running diffusion", 360, 0.08, 0.55), # GPU: 6 min | CPU: 16h
     ("4/5", "🧶 Decoding strands", 180, 0.55, 0.75),
     ("5/5", "🏁 Finalizing inference", 10, 0.75, 0.78),
     ("preview_2d", "🎨 Creating 2D preview", 15, 0.78, 0.82),
-    ("preview_3d", "🎨 Creating Interactive 3D", 20, 0.82, 0.86),
+    ("preview_3d", "🎨 Creating interactive 3D", 20, 0.82, 0.86),
     ("obj_export", "📦 Exporting OBJ", 60, 0.86, 0.92),
-    ("blender", "🟧 Blender export", 120, 0.92, 0.97),
+    ("blender", "🟧 Exporting Blender", 120, 0.92, 0.97),
     ("zip", "📦 Creating ZIP", 15, 0.97, 1.00),
 ]
 
@@ -82,21 +82,20 @@ class VerboseLogCapture:
         if self.original_stdout:
             try: self.original_stdout.write(msg)
             except: pass
-        
-        if self.capturing and msg and msg.strip():
+        if self.capturing:
             # Filter out redundant model internal prints
             skip_terms = ["cfg_val_cur", "for sigma", "tensor(", "width for this lvl", "initializing LVL", "making up cross layer"]
-            
             with self.lock:
+                # Handle multi-line messages
+                lines = msg.splitlines()
                 ts = time.strftime('%H:%M:%S')
-                for line in msg.strip().split('\n'):
-                    line = line.strip()
-                    if line and not any(term in line for term in skip_terms):
-                        # Clean up tqdm lines
-                        if "|" in line and "%" in line:
-                            # Keep only the progress part
-                            line = line.split("|")[-1].strip()
-                        self.logs.append(f"[{ts}] {line}")
+                for line in lines:
+                    line_clean = line.strip()
+                    if line_clean and not any(term in line_clean for term in skip_terms):
+                        # Clean up tqdm lines if they leak
+                        if "|" in line_clean and "%" in line_clean and "[" in line_clean:
+                            continue
+                        self.logs.append(f"[{ts}] {line_clean}")
                 
                 if len(self.logs) > 500:
                     self.logs = self.logs[-400:]
@@ -145,10 +144,19 @@ class ProgressTracker:
             if phase[0] in str(phase_id).lower():
                 self.current_phase_index = i
                 self.current_phase_start_time = time.time()
+                self.current_phase_id = phase[0] # Keep track of ID
                 return
     
-    def get_progress(self):
-        if self.current_phase_index >= len(self.phases):
+    def get_phase_name(self):
+        # Use the stored ID or search
+        phase_id = getattr(self, 'current_phase_id', self.phases[self.current_phase_index][0])
+        for pid, name, _, _, _ in self.phases:
+            if pid == phase_id:
+                return name
+        return "Processing"
+
+    def get_progress(self, is_complete=False):
+        if is_complete or self.current_phase_index >= len(self.phases):
             return 100, 0, "Complete", 100, 0
         current_phase = self.phases[self.current_phase_index]
         phase_id, phase_name, phase_duration, phase_start_pct, phase_end_pct = current_phase
@@ -174,9 +182,9 @@ def format_time(seconds):
     return f"{minutes}m {secs}s" if minutes > 0 else f"{secs}s"
 
 def render_debug_console(logs_list):
-    if not logs_list: logs_list = ["[Waiting for job to start...]"]
+    if not logs_list: logs_list = ["[Waiting for process to start...]"]
     lines_html = []
-    for line in logs_list[-50:]:
+    for line in logs_list[-150:]: # Show even more lines
         escaped = escape(line)
         color = "#d4d4d8"
         if any(x in line for x in ["❌", "ERROR", "ERR]"]): color = "#f87171"
@@ -185,7 +193,32 @@ def render_debug_console(logs_list):
         elif any(x in line for x in ["🔄", "Diffusion:"]): color = "#818cf8"
         elif any(x in line for x in ["🟧", "[Blender]"]): color = "#fb923c"
         lines_html.append(f'<div style="color: {color}; margin: 2px 0;">{escaped}</div>')
-    return f'<div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.5; max-height: 400px; overflow-y: auto;">{"".join(lines_html)}</div>'
+    
+    # Use standard scrolling but with auto-scroll JS
+    return f'''
+    <div id="debug-console-container" style="
+        background-color: #18181b; 
+        border: 1px solid #3f3f46; 
+        border-radius: 8px; 
+        padding: 12px; 
+        font-family: 'JetBrains Mono', 'Fira Code', monospace; 
+        font-size: 12px; 
+        line-height: 1.5; 
+        height: 400px; 
+        max-height: 1200px; 
+        overflow-y: auto; 
+        resize: vertical;
+        display: block;
+    ">
+        <div id="debug-console-content">{"".join(lines_html)}</div>
+    </div>
+    <script>
+        var el = document.getElementById("debug-console-container");
+        if (el) {{
+            el.scrollTop = el.scrollHeight;
+        }}
+    </script>
+    '''
 
 def render_image_html(image_path, title="2D Preview"):
     if not image_path or not Path(image_path).exists():
@@ -241,7 +274,7 @@ def create_complete_html():
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 12px;">
                 <span style="font-size: 28px;">🎉</span>
-                <span style="font-size: 20px; font-weight: 700; color: #34d399;">Complete!</span>
+                <span style="font-size: 20px; font-weight: 700; color: #34d399;">Completed!</span>
             </div>
             <span style="background: #34d39933; color: #34d399; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 700;">100%</span>
         </div>
@@ -264,9 +297,26 @@ def create_error_html(error_msg):
 # --- 5. MODEL LOADER ---
 from inference.img2hair import DiffLocksInference
 
-ckpt_files = list(cfg.repo_dir.rglob("scalp_*.pth"))
-vae_files = list(cfg.repo_dir.rglob("strand_codec.pt"))
-conf_path = cfg.repo_dir / "configs/config_scalp_texture_conditional.json"
+# Search for checkpoints in unified paths
+checkpoints_dir = cfg.checkpoints_dir
+ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
+vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
+conf_path = cfg.configs_dir / "config_scalp_texture_conditional.json"
+
+print(f"[{cfg.platform.upper()}] Searching for checkpoints in: {checkpoints_dir.absolute()}")
+print(f"Checkpoint files found: {[str(f) for f in ckpt_files]}")
+print(f"VAE files found: {[str(f) for f in vae_files]}")
+
+# Check if files exist
+if not ckpt_files:
+    print("ERROR: No checkpoint files found (scalp_*.pth)")
+    print(f"Searching in: {checkpoints_dir / 'difflocks_diffusion'}")
+    print(f"Directory contents: {list((checkpoints_dir / 'difflocks_diffusion').glob('*'))}")
+
+if not vae_files:
+    print("ERROR: No VAE files found (strand_codec.pt)")
+    print(f"Searching in: {checkpoints_dir / 'strand_vae'}")
+    print(f"Directory contents: {list((checkpoints_dir / 'strand_vae').glob('*'))}")
 
 model = None
 
@@ -275,11 +325,11 @@ def load_model():
     if model is not None: return
 
     if not ckpt_files or not vae_files:
-        raise FileNotFoundError("Checkpoints missing!")
+        raise FileNotFoundError("Missing checkpoints!")
     
     print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
-    print("✅ Model loaded!")
+    print("✅ Model Loaded!")
 
 # --- 6. UTILITY FUNCTIONS ---
 
@@ -332,25 +382,44 @@ def generate_preview_2d(npz_path, output_dir, log_capture=None):
         gc.collect()
         return str(preview_path)
     except Exception as e:
-        if log_capture: log_capture.add_log(f"❌ 2D Preview error: {e}")
+        if log_capture: log_capture.add_log(f"❌ 2D Preview Error: {e}")
         return None
 
 def generate_preview_3d(npz_path, log_capture=None):
     try:
-        if log_capture: log_capture.add_log("🎨 3D Interactive: Loading data...")
+        if not Path(npz_path).exists():
+            if log_capture: log_capture.add_log(f"⚠️ 3D Preview: File not found at {npz_path}")
+            return None
+            
+        if log_capture: log_capture.add_log(f"🎨 Interactive 3D: Loading {Path(npz_path).name}...")
         data = np.load(npz_path)
+        if 'positions' not in data:
+            if log_capture: log_capture.add_log(f"⚠️ 3D Preview: 'positions' not in NPZ")
+            return None
+            
         positions = data['positions']
+        if len(positions.shape) != 3:
+            if log_capture: log_capture.add_log(f"⚠️ 3D Preview: Invalid shape {positions.shape}")
+            return None
+            
         num_strands, points_per_strand, _ = positions.shape
+        if log_capture: log_capture.add_log(f"🎨 Interactive 3D: Loaded {num_strands} strands, {points_per_strand} points")
         
-        if log_capture: log_capture.add_log(f"🎨 3D Interactive: Processing {num_strands} strands...")
-        
-        target_strands = max(100, num_strands // 2)
-        strand_step = max(1, num_strands // target_strands)
+        # If it's already a preview (few strands), don't downsample much
+        # If it's the full file, downsample aggressively
+        if num_strands > 1000:
+            target_strands = 500
+            strand_step = num_strands // target_strands
+        else:
+            strand_step = 1
+            
         target_points = 32
         point_step = max(1, points_per_strand // target_points)
         
         subset = positions[::strand_step, ::point_step, :]
         n_s, n_p, _ = subset.shape
+        
+        if log_capture: log_capture.add_log(f"🎨 Interactive 3D: Rendering {n_s} strands...")
         
         x = subset[:, :, 0]
         y = -subset[:, :, 2]
@@ -412,15 +481,15 @@ def generate_preview_3d(npz_path, log_capture=None):
             showlegend=False
         )
         
-        if log_capture: log_capture.add_log("✅ 3D Interactive: Plot created successfully")
+        if log_capture: log_capture.add_log("✅ Interactive 3D: Plot created successfully")
         del positions, subset, x, y, z, fx, fy, fz, x_plot, y_plot, z_plot, color_array
         gc.collect()
         return fig
     except Exception as e:
-        if log_capture: log_capture.add_log(f"❌ 3D Interactive error: {e}")
+        if log_capture: log_capture.add_log(f"❌ Error in Interactive 3D: {e}")
         return None
 
-def create_empty_3d_plot():
+def create_empty_3d_plot(message="🎨 Interactive 3D preview will appear here after generation"):
     fig = go.Figure()
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
@@ -434,7 +503,7 @@ def create_empty_3d_plot():
         margin=dict(l=0, r=0, b=0, t=0),
         height=550,
         annotations=[dict(
-            text="🎨 3D Preview will appear here after generation",
+            text=message,
             xref="paper", yref="paper",
             x=0.5, y=0.5,
             showarrow=False,
@@ -470,7 +539,7 @@ def export_obj(npz_path, obj_path, log_capture=None):
         gc.collect()
         return True
     except Exception as e:
-        if log_capture: log_capture.add_log(f"❌ OBJ error: {e}")
+        if log_capture: log_capture.add_log(f"❌ OBJ Error: {e}")
         return False
 
 def export_blender(npz_path, job_dir, formats, log_capture):
@@ -480,8 +549,15 @@ def export_blender(npz_path, job_dir, formats, log_capture):
         log_capture.add_log("⚠️ No Blender formats selected")
         return []
     if not cfg.blender_exe.exists():
-        log_capture.add_log(f"❌ Blender not found: {cfg.blender_exe}")
+        log_capture.add_log(f"❌ Blender not found at: {cfg.blender_exe}")
         return []
+    
+    # Ensure blender is executable (Linux)
+    if os.name != 'nt':
+        try:
+            os.chmod(cfg.blender_exe, 0o755)
+        except: pass
+        
     script = cfg.repo_dir / "inference/converter_blender.py"
     output_base = job_dir / "hair"
     cmd = [str(cfg.blender_exe), "-b", "-P", str(script), "--", str(npz_path), str(output_base)] + keys
@@ -520,7 +596,7 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
     log_capture.add_log(f"Device: {DEVICE} | Precision: float32")
     
     try:
-        if image is None: raise ValueError("Upload an image first!")
+        if image is None: raise ValueError("Please upload an image first!")
         
         # Phase: Init
         tracker.set_phase("init")
@@ -528,8 +604,9 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()), 
             generate_btn: gr.update(interactive=False),
-            plot_3d: create_empty_3d_plot(),
-            preview_2d: render_image_html(None)
+            plot_3d: create_empty_3d_plot("⏳ Initializing..."),
+            preview_2d: render_image_html(None),
+            download_file: []
         }
         
         # Load model
@@ -546,51 +623,113 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
                 dtype, val = update[0], update[1]
                 if dtype == "status":
                     tracker.set_phase(val)
-                    yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
                 elif dtype == "log":
                     log_capture.add_log(val)
-                    yield { debug_console: render_debug_console(log_capture.get_logs()) }
                 elif dtype == "error":
                     raise Exception(val)
             
-            # Update progress tracker based on time passing
-            yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
+            # Update progress tracker based on time passing more frequently
+            yield {
+                status_html: create_dual_progress_html(*tracker.get_progress()),
+                debug_console: render_debug_console(log_capture.get_logs()),
+                plot_3d: create_empty_3d_plot(f"⏳ {tracker.get_phase_name()}..."),
+                download_file: []
+            }
 
         npz_path = job_dir / "difflocks_output_strands.npz"
-        if not npz_path.exists(): raise Exception("No output generated")
+        if not npz_path.exists(): raise Exception("No result was generated")
         
         # Previews & Exports
         tracker.set_phase("preview_2d")
-        yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()), 
+            debug_console: render_debug_console(log_capture.get_logs()),
+            plot_3d: create_empty_3d_plot("⏳ Creating 2D preview..."),
+            download_file: []
+        }
         preview_img_path = generate_preview_2d(npz_path, job_dir, log_capture)
         preview_2d_html = render_image_html(preview_img_path)
+        # Show 2D preview as soon as it's ready
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()),
+            preview_2d: preview_2d_html,
+            result_group: gr.update(visible=True),
+            debug_console: render_debug_console(log_capture.get_logs()),
+            plot_3d: create_empty_3d_plot("⏳ Creating interactive 3D..."),
+            download_file: []
+        }
         
         tracker.set_phase("preview_3d")
-        yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
-        plot_3d_fig = generate_preview_3d(npz_path, log_capture)
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()), 
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_file: [] 
+        }
+        
+        # Use optimized preview if available
+        preview_npz = job_dir / "difflocks_output_strands_preview.npz"
+        plot_3d_fig = generate_preview_3d(preview_npz if preview_npz.exists() else npz_path, log_capture)
         if plot_3d_fig is None: plot_3d_fig = create_empty_3d_plot()
+        # Show 3D preview as soon as it's ready
+        yield {
+            status_html: create_dual_progress_html(*tracker.get_progress()),
+            plot_3d: plot_3d_fig,
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_file: []
+        }
         
         tracker.set_phase("obj_export")
-        yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()), 
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_file: []
+        }
         obj_path = job_dir / "hair.obj"
         export_obj(npz_path, obj_path, log_capture)
-        yield { debug_console: render_debug_console(log_capture.get_logs()) }
+        yield { 
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_file: []
+        }
         
         tracker.set_phase("blender")
-        yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()), 
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_file: []
+        }
         blender_outputs = export_blender(npz_path, job_dir, export_formats, log_capture)
-        yield { debug_console: render_debug_console(log_capture.get_logs()) }
+        yield { 
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_file: []
+        }
         
         tracker.set_phase("zip")
-        yield { status_html: create_dual_progress_html(*tracker.get_progress()), debug_console: render_debug_console(log_capture.get_logs()) }
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()), 
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_file: []
+        }
         zip_path = job_dir / "DiffLocks_Results.zip"
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for f in [str(npz_path), preview_img_path, str(obj_path)] + blender_outputs:
-                if f and Path(f).exists(): zf.write(f, Path(f).name)
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # Include everything except the huge main .npz if we want it smaller, 
+                # but usually users want the main npz. Let's keep it but skip redundant files.
+                for f in [str(npz_path), preview_img_path, str(obj_path)] + blender_outputs:
+                    if f and Path(f).exists():
+                        zf.write(f, Path(f).name)
+        except Exception as e:
+            log_capture.add_log(f"⚠️ Zip error (skipping): {e}")
         
-        # Final yield with all files
-        final_files = [str(zip_path), str(npz_path), preview_img_path, str(obj_path)] + blender_outputs
+        # Final yield with all files (ZIP is optional/last)
+        final_files = [str(npz_path), preview_img_path, str(obj_path)] + blender_outputs
         final_files = [f for f in final_files if f and Path(f).exists()]
+        
+        # Add ZIP at the beginning of the list if it exists
+        if zip_path.exists():
+            final_files.insert(0, str(zip_path))
+
+        # Track completion
+        tracker.get_progress(is_complete=True)
         
         yield {
             plot_3d: plot_3d_fig,
@@ -752,25 +891,77 @@ dark_theme = gr.themes.Base(
 )
 
 with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) as demo:
-    gr.Markdown("## 💇‍♀️ DiffLocks Studio")
-    
+    # --- 8.1. CPU WARNING BANNER ---
+    if IS_CPU:
+        with gr.Row(elem_classes="cpu-warning"):
+            gr.HTML(f'''
+                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 24px;">⚠️</span>
+                        <div style="flex-grow: 1;">
+                            <h3 style="color: #ef4444; margin: 0; font-size: 16px; font-weight: 700;">No GPU detected! (Running on {cfg.platform.upper()})</h3>
+                            <p style="color: #fca5a5; margin: 4px 0 0 0; font-size: 14px;">
+                                Inference on CPU will take approximately <b>16 HOURS</b>. 
+                                We strongly recommend using a GPU environment (Kaggle/Colab) for a 6-minute inference.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            ''')
+
+    # --- 8.2. HEADER ---
     with gr.Row():
+        with gr.Column(scale=8):
+            gr.Markdown(f"""
+                # 💇‍♀️ DiffLocks Studio
+                ### High-fidelity 3D hair generation from a single image.
+                *Platform: **{cfg.platform.upper()}** | Device: **{DEVICE}** | Precision: **float32***
+            """)
         with gr.Column(scale=1):
-            image_input = gr.Image(type="filepath", label="Input Portrait", height=300)
-            cfg_slider = gr.Slider(1, 7, 2.5, step=0.1, label="CFG Scale")
-            format_checkboxes = gr.CheckboxGroup(choices=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"], value=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"], label="Additional Exports")
-            generate_btn = gr.Button("🚀 GENERATE HAIR", variant="primary", size="lg")
-        
-        with gr.Column(scale=2):
-            status_html = gr.HTML(value=create_dual_progress_html(0, 0, "⏳ Ready", 0, 0))
+            gr.Markdown(f"<div style='text-align: right; color: #71717a; font-size: 12px;'>v1.0.0-optimized</div>")
+
+    # --- 8.3. MAIN INTERFACE ---
+    with gr.Row(equal_height=False):
+        # LEFT COLUMN: INPUTS
+        with gr.Column(scale=4):
+            with gr.Group():
+                gr.Markdown("### 📥 Step 1: Input Image")
+                image_input = gr.Image(type="filepath", label="Single Image (RGB)", height=400)
+                
+                with gr.Accordion("⚙️ Advanced Settings", open=False):
+                    cfg_slider = gr.Slider(1.0, 7.0, 2.5, step=0.1, label="CFG Scale")
+                    
+                generate_btn = gr.Button("🚀 Generate 3D Hair", variant="primary", size="lg")
+
+            with gr.Group():
+                gr.Markdown("### 📦 Step 2: Export Formats")
+                format_checkboxes = gr.CheckboxGroup(
+                    choices=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"],
+                    value=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"],
+                    label="Select formats to generate"
+                )
+                gr.Markdown("<small>Blender export includes procedural hair curves and materials.</small>")
+
+        # RIGHT COLUMN: OUTPUTS & PREVIEW
+        with gr.Column(scale=6):
+            # PROGRESS SECTION
+            status_html = gr.HTML(value=create_dual_progress_html(0, 0, "Ready to start", 0, 0))
+            
             with gr.Group(visible=False) as result_group:
                 with gr.Tabs():
-                    with gr.Tab("🎨 3D Interactive preview"): plot_3d = gr.Plot(value=create_empty_3d_plot())
-                    with gr.Tab("📸 2D Preview"): preview_2d = gr.HTML(value=render_image_html(None))
-                download_file = gr.File(label="📥 Download Results", file_count="multiple")
-            with gr.Accordion("🛠️ Debug Console", open=True):
+                    with gr.Tab("🎨 3D Preview"):
+                        plot_3d = gr.Plot(value=create_empty_3d_plot(), label="Interactive 3D")
+                    
+                    with gr.Tab("🖼️ 2D Preview"):
+                        preview_2d = gr.HTML(render_image_html(None))
+
+                with gr.Group():
+                    gr.Markdown("### 📥 Download Results")
+                    download_file = gr.File(label="Generated Assets (.zip)", file_count="multiple")
+
+            with gr.Accordion("📜 Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))
-    
+
     generate_btn.click(
         fn=run_inference,
         inputs=[image_input, cfg_slider, format_checkboxes],

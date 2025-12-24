@@ -11,7 +11,7 @@ import mediapipe as mp
 
 from models.strand_codec import StrandCodec
 from models.rgb_to_material import RGB2MaterialModel
-from utils.diffusion_utils import sample_images_cfg
+from utils.diffusion_utils import sample_images_cfg_yield
 from utils.strand_util import sample_strands_from_scalp_with_density
 from data_loader.dataloader import DiffLocksDataset
 from platform_config import cfg
@@ -46,6 +46,79 @@ def interpolate_tbn(barys, vertex_idxs, v_tangents, v_bitangents, v_normals):
     norm = np.linalg.norm(point_tangents, axis=-1, keepdims=True)
     point_tangents = point_tangents / (norm + 1e-8)
     return point_tangents, point_bitangents, point_normals
+
+def tbn_space_to_world_gpu_native(root_uv, strands_positions, scalp_mesh_data):
+    """Truly GPU-native TBN to World transformation to avoid CPU-GPU sync overhead."""
+    device = strands_positions.device
+    dtype = strands_positions.dtype
+    
+    # Ensure all required mesh data is on the correct device/dtype
+    def to_torch(x, is_index=False):
+        if torch.is_tensor(x):
+            return x.to(device=device, dtype=torch.long if is_index else dtype)
+        return torch.from_numpy(x).to(device=device, dtype=torch.long if is_index else dtype)
+
+    # Note: These are large maps, but they are only moved once if the dictionary is reused
+    scalp_vertex_idxs_map = to_torch(scalp_mesh_data["vertex_idxs_map"], is_index=True)
+    scalp_bary_map = to_torch(scalp_mesh_data["bary_map"])
+    mesh_v_tangents = to_torch(scalp_mesh_data["v_tangents"])
+    mesh_v_bitangents = to_torch(scalp_mesh_data["v_bitangents"])
+    mesh_v_normals = to_torch(scalp_mesh_data["v_normals"])
+    scalp_v = to_torch(scalp_mesh_data["verts"])
+    
+    tex_size = scalp_vertex_idxs_map.shape[0]
+    
+    # 1. Get pixel indices
+    # root_uv should be on device already
+    pixel_indices = torch.floor(root_uv * tex_size).long()
+    pixel_indices = torch.clamp(pixel_indices, 0, tex_size - 1)
+    
+    # 2. Indexing on GPU
+    # vertex_idxs must be long for further indexing
+    vertex_idxs = scalp_vertex_idxs_map[pixel_indices[:, 0], pixel_indices[:, 1], :].long() # [N, 3]
+    barys = scalp_bary_map[pixel_indices[:, 0], pixel_indices[:, 1], :] # [N, 3]
+    
+    # 3. Interpolate TBN (Ported interpolate_tbn to torch)
+    nr_positions = barys.shape[0]
+    
+    # Sample and weight tangents
+    # Ensure indices are long
+    v_idxs_flat = vertex_idxs.reshape(-1).long()
+    sampled_tangents = mesh_v_tangents[v_idxs_flat].reshape(nr_positions, 3, 3)
+    weighted_tangents = sampled_tangents * barys.reshape(nr_positions, 3, 1)
+    point_tangents = weighted_tangents.sum(dim=1)
+    point_tangents = point_tangents / (torch.norm(point_tangents, dim=-1, keepdim=True) + 1e-8)
+
+    # Sample and weight normals
+    sampled_normals = mesh_v_normals[v_idxs_flat].reshape(nr_positions, 3, 3)
+    weighted_normals = sampled_normals * barys.reshape(nr_positions, 3, 1)
+    point_normals = weighted_normals.sum(dim=1)
+    point_normals = point_normals / (torch.norm(point_normals, dim=-1, keepdim=True) + 1e-8)
+
+    # Compute bitangents
+    point_bitangents = torch.cross(point_normals, point_tangents, dim=-1)
+    point_bitangents = point_bitangents / (torch.norm(point_bitangents, dim=-1, keepdim=True) + 1e-8)
+
+    # Recompute orthogonal tangents
+    point_tangents = torch.cross(point_bitangents, point_normals, dim=-1)
+    point_tangents = point_tangents / (torch.norm(point_tangents, dim=-1, keepdim=True) + 1e-8)
+
+    # 4. Basis Change
+    strands_tbn = torch.stack((point_tangents, point_bitangents, point_normals), dim=2) # [N, 3, 3]
+    indices_tbn = torch.tensor([0, 2, 1], device=device, dtype=torch.long)
+    strands_tbn = torch.index_select(strands_tbn, 2, indices_tbn)
+    strands_tbn[..., 0] = -strands_tbn[..., 0]
+    
+    # Apply rotation to positions
+    orig_points = torch.matmul(strands_tbn, strands_positions.transpose(1, 2)).transpose(1, 2)
+    
+    # 5. Get root positions in world space
+    sampled_v = scalp_v[v_idxs_flat].reshape(nr_positions, 3, 3)
+    weighted_v = sampled_v * barys.reshape(nr_positions, 3, 1)
+    roots_positions = weighted_v.sum(dim=1)
+    
+    # Final world points
+    return orig_points + roots_positions[:, None, :]
 
 def tbn_space_to_world_cpu_safe(root_uv, strands_positions, scalp_mesh_data):
     target_device = strands_positions.device
@@ -138,7 +211,7 @@ class DiffLocksInference():
         if out_path: os.makedirs(out_path, exist_ok=True)
         actual_cfg = cfg_val if cfg_val is not None else self.cfg_val
         
-        if progress is not None: progress(0, desc="Starting...")
+        if progress is not None: progress(0, desc="Initializing...")
         # INITIAL LOG
         yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise} | Precision=float32"
 
@@ -155,7 +228,7 @@ class DiffLocksInference():
             cropped_face = crop_face(frame, lms, 770)
             del frame
             rgb_img_gpu = torch.tensor(cropped_face).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.0
-            rgb_img_cpu = rgb_img_gpu.cpu().clone() # Backup para guardar al final
+            rgb_img_cpu = rgb_img_gpu.cpu().clone() # Backup for final save
             yield "log", "✅ Face detected and cropped (Zoom 2.8x)"
             
             # 2. DINO
@@ -178,7 +251,7 @@ class DiffLocksInference():
             cls_tok_cpu = cls_tok.cpu().clone()
             del dinov2, out, patch, cls_tok, patch_emb, rgb_img_gpu
             force_cleanup()
-            yield "log", "✅ Embeddings generated successfully"
+            yield "log", "✅ Embeddings successfully generated"
             
             # 3. DIFFUSION
             yield "status", "🌫️ 3/5: Diffusion (Generating Hair)..."
@@ -196,10 +269,10 @@ class DiffLocksInference():
             except AttributeError as e:
                 if "'NoneType' object has no attribute 'seek'" in str(e):
                     print("CRITICAL ERROR: torch.load failed with NoneType seek error.")
-                    print("This usually means the file is corrupted or empty.")
+                    print("This usually means the file is corrupt or empty.")
                     # Try to delete it so it redownloads?
                     # os.remove(self.paths['diff'])
-                    raise RuntimeError(f"Model file corrupted: {self.paths['diff']}. Please delete it and restart to redownload.") from e
+                    raise RuntimeError(f"Corrupt model file: {self.paths['diff']}. Please delete it and restart to redownload.") from e
                 raise e
             # END DEBUG PATCH
             model.inner_model.load_state_dict(ckpt['model_ema'])
@@ -224,16 +297,21 @@ class DiffLocksInference():
             def p_callback(info):
                 if progress is not None:
                     i = info['i']
-                    progress(0.2 + 0.6 * (i / self.nr_iters_denoise), desc=f"Denoising {i}/{self.nr_iters_denoise}")
+                    progress(0.2 + 0.6 * (i / self.nr_iters_denoise), desc=f"Diffusion {i}/{self.nr_iters_denoise}")
                 if info['i'] % 10 == 0:
                     print(f"🔄 Diffusion: Step {info['i']}/{self.nr_iters_denoise} (sigma={info['sigma']:.4f})")
 
             # Sampling (No autocast to match reference)
-            scalp = sample_images_cfg(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra, callback=p_callback)
+            # Use yielding version for progress updates
+            scalp = None
+            for x_step, i, sigma in sample_images_cfg_yield(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra, callback=p_callback):
+                scalp = x_step
+                # We can optionally yield more frequent logs here if we wanted
+                pass
             
             # NaN Check
             if torch.isnan(scalp).any():
-                yield "error", "The model generated NaN values. This can happen due to precision issues (float16) or high CFG. Try lowering CFG or restarting."
+                yield "error", "Model generated NaN values. This can occur due to precision issues (float16) or high CFG. Try lowering CFG or restarting."
                 return
 
             # CRITICAL: Convert to float32 for decoder compatibility
@@ -251,7 +329,7 @@ class DiffLocksInference():
 
 
             if density.sum() == 0: 
-                yield "error", "The model generated an empty density map. Try a different image or adjust CFG."
+                yield "error", "Model generated an empty density map. Try a different image or adjust CFG."
                 return
             yield "log", f"✅ Neural texture generated (density sum: {density.sum():.1f})"
             
@@ -280,25 +358,8 @@ class DiffLocksInference():
                 if i % 10 == 0:
                     print(f"🧬 Decoding: Chunk {i}/{total}")
             
-            # Create a wrapper function to ensure all tensors are on the same device
-            def tbn_space_to_world_gpu(root_uv, strands_positions, scalp_mesh_data):
-                # Ensure all inputs are on the same device as the model
-                device = codec.device
-                root_uv = root_uv.to(device)
-                strands_positions = strands_positions.to(device)
-                
-                # Convert to CPU for the actual computation if needed
-                root_uv_cpu = root_uv.cpu()
-                strands_positions_cpu = strands_positions.cpu()
-                
-                # Call the original function
-                result = tbn_space_to_world_cpu_safe(root_uv_cpu, strands_positions_cpu, scalp_mesh_data)
-                
-                # Return the result on the same device as the input
-                return result.to(device)
-            
-            # Use the GPU version of the function
-            tbn_func = tbn_space_to_world_gpu if torch.cuda.is_available() else tbn_space_to_world_cpu_safe
+            # Use the native GPU function for speed and stability
+            tbn_func = tbn_space_to_world_gpu_native if torch.cuda.is_available() else tbn_space_to_world_cpu_safe
             
             # Call the function with the appropriate device-aware function
             strands, _ = sample_strands_from_scalp_with_density(
@@ -307,7 +368,7 @@ class DiffLocksInference():
                 callback=decoding_callback)
             
             if strands is None or strands.shape[0] == 0:
-                yield "error", "Decoding failed: No strands were generated. Check density map sum."
+                yield "error", "Decoding failed: no strands generated. Check the density map sum."
                 return
 
             yield "log", f"✅ 3D Geometry built: {strands.shape[0]} strands generated"
@@ -317,18 +378,38 @@ class DiffLocksInference():
             if progress is not None: progress(0.95, desc="Saving results...")
             if out_path and strands is not None:
                 positions = strands.cpu().numpy()
-                np.savez_compressed(os.path.join(out_path, "difflocks_output_strands.npz"), positions=positions)
-                del positions
-                torchvision.utils.save_image(rgb_img_cpu, os.path.join(out_path, "rgb.png"))
-            
-            yield "log", "✨ Process Completed!"
-            if progress is not None: progress(1.0, desc="Done!")
+                npz_full_path = os.path.join(out_path, "difflocks_output_strands.npz")
+                npz_preview_path = os.path.join(out_path, "difflocks_output_strands_preview.npz")
+                
+                # Save full version
+                np.savez_compressed(npz_full_path, positions=positions)
+                
+                # Save preview version (optimized for 3D plot)
+                try:
+                    num_strands = positions.shape[0]
+                    # Target around 500 strands for a fast interactive preview
+                    target_strands = 500 
+                    if num_strands > target_strands:
+                        step = num_strands // target_strands
+                        preview_positions = positions[::step]
+                    else:
+                        preview_positions = positions
+                    
+                    np.savez_compressed(npz_preview_path, positions=preview_positions)
+                    yield "log", f"✅ Optimized preview: {preview_positions.shape[0]} strands"
+                except Exception as e:
+                    yield "log", f"⚠️ Error creating optimized preview: {e}"
+                
+                # Copy input image
+                cv2.imwrite(os.path.join(out_path, "input_cropped.png"), cv2.cvtColor(cropped_face, cv2.COLOR_RGB2BGR))
+                
+            yield "status", "✅ Process completed!"
+            if progress is not None: progress(1.0, desc="Completed")
             yield "result", strands, None
 
         except Exception as e:
-            yield "error", str(e)
             traceback.print_exc()
-            raise
+            yield "error", f"Inference error: {str(e)}"
         finally:
             force_cleanup()
 
@@ -336,5 +417,5 @@ class DiffLocksInference():
         img = cv2.imread(fpath)
         if img is None: raise FileNotFoundError(f"{fpath}")
         rgb = torch.tensor(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.
-        # Propagamos el generador
+        # Propagate the generator
         yield from self.rgb2hair(rgb, out, cfg_val=cfg_val, progress=progress)

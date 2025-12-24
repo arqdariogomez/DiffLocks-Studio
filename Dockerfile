@@ -4,6 +4,7 @@ FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
+ENV DOCKER_CONTAINER=true
 
 # 1. Install system dependencies
 RUN apt-get update && apt-get install -y \

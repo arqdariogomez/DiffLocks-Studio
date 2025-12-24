@@ -9,7 +9,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Literal
 
-PlatformType = Literal['kaggle', 'colab', 'huggingface', 'pinokio', 'local']
+PlatformType = Literal['kaggle', 'colab', 'huggingface', 'pinokio', 'docker', 'local']
 
 @dataclass
 class Config:
@@ -17,6 +17,8 @@ class Config:
     work_dir: Path
     repo_dir: Path
     output_dir: Path
+    checkpoints_dir: Path
+    configs_dir: Path
     blender_exe: Path
     has_gpu: bool
     vram_gb: float
@@ -24,7 +26,6 @@ class Config:
 
     @staticmethod
     def detect() -> 'Config':
-        # ... (platform detection logic) ...
         if Path("/kaggle").exists():
             platform = 'kaggle'
             work_dir = Path("/kaggle/working")
@@ -43,10 +44,16 @@ class Config:
             repo_dir = work_dir
             blender_exe = Path("/tmp/blender/blender") 
             needs_share = False
+        elif Path("/app").exists() and os.environ.get("DOCKER_CONTAINER", "false") == "true":
+            platform = 'docker'
+            work_dir = Path("/app")
+            repo_dir = Path("/app")
+            blender_exe = Path("/app/blender/blender") 
+            needs_share = False
         elif 'PINOKIO_HOME' in os.environ:
             platform = 'pinokio'
             work_dir = Path.cwd()
-            repo_dir = work_dir # Fixed for flat structure
+            repo_dir = work_dir
             blender_exe = work_dir / "blender" / ("blender.exe" if sys.platform == 'win32' else "blender")
             needs_share = False
         else:
@@ -55,6 +62,17 @@ class Config:
             repo_dir = work_dir
             blender_exe = Path("blender/blender") 
             needs_share = False
+
+        # Set standard directories relative to repo_dir
+        checkpoints_dir = repo_dir / "checkpoints"
+        configs_dir = repo_dir / "configs"
+
+        # Special case for Docker if they are mapped differently
+        if platform == 'docker':
+            if not checkpoints_dir.exists() and Path("/app/checkpoints").exists():
+                checkpoints_dir = Path("/app/checkpoints")
+            if not configs_dir.exists() and Path("/app/configs").exists():
+                configs_dir = Path("/app/configs")
 
         has_gpu = False
         vram_gb = 0.0
@@ -65,9 +83,13 @@ class Config:
                 vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
         except: pass
 
-        output_dir = work_dir / "outputs"
+        if platform == 'docker' or platform == 'pinokio' or platform == 'local':
+            output_dir = repo_dir / "studio_outputs"
+        else:
+            output_dir = work_dir / "outputs"
+        
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        return Config(platform, work_dir, repo_dir, output_dir, blender_exe, has_gpu, vram_gb, needs_share)
+        return Config(platform, work_dir, repo_dir, output_dir, checkpoints_dir, configs_dir, blender_exe, has_gpu, vram_gb, needs_share)
 
 cfg = Config.detect()

@@ -1,8 +1,8 @@
 import os
 import torch
 
-# --- 1. COMPILACIÓN (JIT) ---
-# Desactivado para evitar crash "INTERNAL ASSERT FAILED" en T4
+# --- 1. COMPILATION (JIT) ---
+# Disabled to avoid "INTERNAL ASSERT FAILED" crash on T4
 use_compile = False
 
 def get_use_compile():
@@ -23,8 +23,8 @@ def get_checkpointing():
     return _checkpointing
 
 # --- 3. FLASH ATTENTION 2 ---
-# Controla si se intenta usar FA2. Lo ponemos en False por defecto para seguridad,
-# ya que en attention.py tenemos nuestro propio fallback manual.
+# Controls if FA2 is attempted. Set to False by default for safety,
+# as we have our own manual fallback in attention.py.
 _use_flash_attention_2 = False
 
 def use_flash_attention_2(enable=True):

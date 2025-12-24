@@ -23,11 +23,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [ gpu ]
-    command: >
-      bash -c "mkdir -p /app/.cache/torch/hub/facebookresearch_dinov2_main && 
-      chmod -R 777 /app/.cache && 
-      python -c 'import torch; print(f"Torch hub dir: {torch.hub.get_dir()}")' && 
-      python app.py"
+    command: ["bash", "-c", "mkdir -p /app/.cache/torch/hub && chmod -R 777 /app/.cache && python app.py"]
 
 volumes:
   torch_cache:

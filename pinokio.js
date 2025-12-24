@@ -8,7 +8,7 @@ module.exports = {
   description: "AI-powered 3D hair generation from a single image",
   icon: "icon.png",
   menu: async (kernel) => {
-    // Detectamos la instalación buscando la carpeta 'venv'
+    // Detect installation by looking for 'venv' folder
     let installed = await kernel.exists(__dirname, "venv")
     
     if (installed) {

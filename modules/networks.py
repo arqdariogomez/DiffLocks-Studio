@@ -27,7 +27,7 @@ class BlockSiren(torch.nn.Module):
         self.scale_init = scale_init
         # self.freq_scaling = scale_init
 
-        self.conv = torch.nn.Linear(in_channels, out_channels, bias=self.use_bias).to("cuda" if torch.cuda.is_available() else "cpu")
+        self.conv = torch.nn.Linear(in_channels, out_channels, bias=self.use_bias)
 
         with torch.no_grad():
             

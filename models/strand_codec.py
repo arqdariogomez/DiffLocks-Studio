@@ -286,28 +286,26 @@ class StrandGeneratorSiren(nn.Module):
         self.z_scaling = torch.nn.Parameter(torch.ones([])*0.2)
         self.hsiren_scaling = torch.nn.Parameter(torch.ones([]))
 
-
-        #compute here a lot of the cuda stuff so we don't need to perform cpu-cuda transfers during the forward pass
-        # sampling t
-        self.t = torch.linspace(-1, 1, nr_verts_to_create) #between -1 and 1 because siren usually expects normalized input
-        self.start_positions = torch.zeros(1, 1, 3)
-
-
     def forward(self, strand_features, hyperparams, normalization_dict):
         nr_strands = strand_features.shape[0]
-        strand_features = strand_features.view(nr_strands, 1, -1).repeat(1, self.nr_verts_to_create, 1) # nr_strands x 100 x nr_channels
-        t = self.t.view(1, self.nr_verts_to_create, -1).repeat(nr_strands, 1, 1) #nrstrands, nr_verts, nr_channels
+        device = strand_features.device
         
+        # Create these on the fly on the correct device to avoid load_state_dict issues
+        t_buf = torch.linspace(-1, 1, self.nr_verts_to_create, device=device)
+        start_positions_buf = torch.zeros(1, 1, 3, device=device)
 
+        strand_features = strand_features.view(nr_strands, 1, -1).repeat(1, self.nr_verts_to_create, 1) # nr_strands x 100 x nr_channels
+        t = t_buf.view(1, self.nr_verts_to_create, -1).repeat(nr_strands, 1, 1) #nrstrands, nr_verts, nr_channels
+        
         point_indices = None
         if self.decode_random_verts:
             # choose a random t for each strand
             # we can create only up until the very last vertex, except the tip, we need to be able to sample the next vertex so as to get a direction vector
-            probability = torch.ones([nr_strands, self.num_pts - 2], dtype=torch.float32, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")) 
+            probability = torch.ones([nr_strands, self.nr_verts_per_strand - 2], dtype=torch.float32, device=device) 
             point_indices = torch.multinomial(probability, self.nr_verts_to_create, replacement=False) # size of the chunk size we selected
             # add also the next vertex on the strand so that we can compute directions
             point_indices = torch.cat([point_indices, point_indices + 1], 1)
-
+            
             t = batched_index_select(t, 1, point_indices)
 
         # decode xyz
@@ -344,7 +342,7 @@ class StrandGeneratorSiren(nn.Module):
                 pred_strands = points_pos
             else:
                 # start_positions = torch.zeros(nr_strands, 1, 3)
-                start_positions = self.start_positions.repeat(nr_strands,1,1)
+                start_positions = start_positions_buf.repeat(nr_strands,1,1)
                 pred_strands = torch.cat([start_positions, points_pos], 1)
                 #positions are normalized to be in unit gaussian so we denormalize them to be in real space
                 pred_strands=un_normalize_data(pred_strands, normalization_dict["xyz_mean"], normalization_dict["xyz_std"])
@@ -359,11 +357,11 @@ class StrandGeneratorSiren(nn.Module):
             pred_dict["strand_directions"]=hair_dir
 
 
-            #predict pos 
+            # predict pos 
             pred_strands = torch.cumsum(hair_dir, dim=1) # nr_strands, nr_verts-1, 3
             # we know that the first vertex is 0,0,0 so we just concatenate that one
             # start_positions = torch.zeros(nr_strands, 1, 3)
-            start_positions = self.start_positions.repeat(nr_strands,1,1)
+            start_positions = start_positions_buf.repeat(nr_strands,1,1)
             pred_strands = torch.cat([start_positions, pred_strands], 1)
 
 

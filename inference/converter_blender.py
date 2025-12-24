@@ -82,19 +82,37 @@ try:
     if 'blend' in requested_formats:
         out = f"{output_base}.blend"
         bpy.ops.wm.save_as_mainfile(filepath=out, compress=True)
+        print(f"✅ Exported: {out}")
     
     if 'abc' in requested_formats:
         out = f"{output_base}.abc"
-        bpy.ops.wm.alembic_export(filepath=out, selected=True)
+        # For Blender 4.2+, evaluation_mode='VIEWPORT' is safer in background mode
+        # 'visible_only' was removed in recent Blender versions (replaced by selection/evaluation mode)
+        bpy.ops.wm.alembic_export(
+            filepath=out, 
+            selected=True, 
+            curves=True,
+            export_hair=True,
+            evaluation_mode='VIEWPORT'
+        )
+        print(f"✅ Exported: {out}")
 
     if 'usd' in requested_formats:
         out = f"{output_base}.usd"
-        bpy.ops.wm.usd_export(filepath=out, selected_objects_only=True)
+        # For Blender 4.2+, evaluation_mode='VIEWPORT' is safer in background mode
+        bpy.ops.wm.usd_export(
+            filepath=out, 
+            selected_objects_only=True,
+            export_hair=True,
+            evaluation_mode='VIEWPORT'
+        )
+        print(f"✅ Exported: {out}")
         
     if 'obj' in requested_formats:
         out = f"{output_base}.obj"
         # Fallback for OBJ if needed via Blender
         bpy.ops.wm.obj_export(filepath=out, export_selected_objects=True)
+        print(f"✅ Exported: {out}")
 
     print("✅ SUCCESS")
 
