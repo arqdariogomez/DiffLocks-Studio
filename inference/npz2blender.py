@@ -116,7 +116,6 @@ def export_alembic(out_alembic_path, resolution):
         export_hair=True, 
         export_particles=False, 
         as_background_job=False, 
-        evaluation_mode='VIEWPORT', 
         init_scene_frame_range=True
     )
 

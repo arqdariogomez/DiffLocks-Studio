@@ -90,8 +90,7 @@ try:
         bpy.ops.wm.alembic_export(
             filepath=out, 
             selected=True, 
-            export_hair=True,
-            evaluation_mode='VIEWPORT'
+            export_hair=True
         )
         print(f"✅ Exported: {out}")
 
@@ -101,8 +100,7 @@ try:
         bpy.ops.wm.usd_export(
             filepath=out, 
             selected_objects_only=True,
-            export_hair=True,
-            evaluation_mode='VIEWPORT'
+            export_hair=True
         )
         print(f"✅ Exported: {out}")
         
