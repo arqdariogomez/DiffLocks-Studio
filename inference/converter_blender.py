@@ -87,11 +87,9 @@ try:
     if 'abc' in requested_formats:
         out = f"{output_base}.abc"
         # For Blender 4.2+, evaluation_mode='VIEWPORT' is safer in background mode
-        # 'visible_only' was removed in recent Blender versions (replaced by selection/evaluation mode)
         bpy.ops.wm.alembic_export(
             filepath=out, 
             selected=True, 
-            curves=True,
             export_hair=True,
             evaluation_mode='VIEWPORT'
         )
