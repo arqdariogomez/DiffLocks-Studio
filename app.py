@@ -56,16 +56,15 @@ IS_CPU = (DEVICE == "cpu")
 # --- 2. KAGGLE UI CONSTANTS ---
 PHASES = [
     ("init", "🚀 Initializing", 5, 0.00, 0.01),
-    ("1/5", "� Detecting Face and Geometry", 15, 0.01, 0.03),
+    ("1/5", "📸 Preprocessing image", 15, 0.01, 0.03),
     ("2/5", "🔍 Extracting features", 45, 0.03, 0.08),
     ("3/5", "✨ Running diffusion", 360, 0.08, 0.55), # GPU: 6 min | CPU: 16h
     ("4/5", "🧶 Decoding strands", 180, 0.55, 0.75),
     ("5/5", "🏁 Finalizing inference", 10, 0.75, 0.78),
     ("preview_2d", "🎨 Creating 2D preview", 15, 0.78, 0.82),
-    ("preview_3d", "🎨 Creating interactive 3D", 20, 0.82, 0.86),
-    ("obj_export", "📦 Exporting OBJ", 60, 0.86, 0.92),
-    ("blender", "🟧 Exporting Blender", 120, 0.92, 0.97),
-    ("zip", "📦 Creating ZIP", 15, 0.97, 1.00),
+    ("preview_3d", "🎨 Creating Interactive 3D", 20, 0.82, 0.88),
+    ("obj_export", "📦 Exporting OBJ", 60, 0.88, 0.94),
+    ("blender", "🟧 Blender export", 120, 0.94, 1.00),
 ]
 
 # --- 3. LOG CAPTURE & PROGRESS TRACKER ---
@@ -158,18 +157,26 @@ class ProgressTracker:
     def get_progress(self, is_complete=False):
         if is_complete or self.current_phase_index >= len(self.phases):
             return 100, 0, "Complete", 100, 0
+            
         current_phase = self.phases[self.current_phase_index]
         phase_id, phase_name, phase_duration, phase_start_pct, phase_end_pct = current_phase
+        
         phase_elapsed = time.time() - self.current_phase_start_time
-        phase_progress = min((phase_elapsed / phase_duration) * 100, 99) if phase_duration > 0 else 0
+        
+        # Calculate progress within phase (0-100%)
+        phase_internal_progress = min((phase_elapsed / phase_duration) * 100, 99) if phase_duration > 0 else 0
         phase_remaining = max(phase_duration - phase_elapsed, 0)
-        completed_time = sum(self.phases[i][2] for i in range(self.current_phase_index))
-        current_contribution = (phase_progress / 100) * phase_duration
-        total_elapsed_estimated = completed_time + current_contribution
-        total_progress = min((total_elapsed_estimated / self.total_estimated) * 100, 99)
+        
+        # Calculate total progress using the percentage ranges defined in PHASES
+        # Total progress = start_pct + (end_pct - start_pct) * (internal_progress / 100)
+        total_progress = (phase_start_pct + (phase_end_pct - phase_start_pct) * (phase_internal_progress / 100)) * 100
+        total_progress = min(max(total_progress, 0), 99) # Cap at 99% until fully complete
+        
+        # Estimate total remaining time
         remaining_phases_time = sum(self.phases[i][2] for i in range(self.current_phase_index + 1, len(self.phases)))
         total_remaining = phase_remaining + remaining_phases_time
-        return total_progress, total_remaining, phase_name, phase_progress, phase_remaining
+        
+        return total_progress, total_remaining, phase_name, phase_internal_progress, phase_remaining
 
 # --- 4. HTML RENDERING FUNCTIONS ---
 
@@ -184,7 +191,8 @@ def format_time(seconds):
 def render_debug_console(logs_list):
     if not logs_list: logs_list = ["[Waiting for process to start...]"]
     lines_html = []
-    for line in logs_list[-150:]: # Show even more lines
+    # Take the last 200 lines to keep it performant
+    for line in logs_list[-200:]: 
         escaped = escape(line)
         color = "#d4d4d8"
         if any(x in line for x in ["❌", "ERROR", "ERR]"]): color = "#f87171"
@@ -192,32 +200,49 @@ def render_debug_console(logs_list):
         elif any(x in line for x in ["⚠️", "WARNING"]): color = "#fbbf24"
         elif any(x in line for x in ["🔄", "Diffusion:"]): color = "#818cf8"
         elif any(x in line for x in ["🟧", "[Blender]"]): color = "#fb923c"
-        lines_html.append(f'<div style="color: {color}; margin: 2px 0;">{escaped}</div>')
+        lines_html.append(f'<div style="color: {color}; margin: 2px 0; overflow-anchor: none;">{escaped}</div>')
     
-    # Use standard scrolling but with auto-scroll JS
+    content = "".join(lines_html)
+    
+    # Stable container with auto-scroll logic
     return f'''
     <div id="debug-console-container" style="
-        background-color: #18181b; 
-        border: 1px solid #3f3f46; 
+        background-color: #09090b; 
+        border: 1px solid #27272a; 
         border-radius: 8px; 
         padding: 12px; 
         font-family: 'JetBrains Mono', 'Fira Code', monospace; 
         font-size: 12px; 
         line-height: 1.5; 
-        height: 400px; 
-        max-height: 1200px; 
-        overflow-y: auto; 
-        resize: vertical;
-        display: block;
+        height: 450px; 
+        overflow-y: scroll; 
+        position: relative;
+        display: flex;
+        flex-direction: column;
     ">
-        <div id="debug-console-content">{"".join(lines_html)}</div>
+        <div style="flex: 1 1 auto; min-height: 0;"></div>
+        <div id="debug-console-content" style="flex: 0 0 auto;">{content}</div>
+        <div id="debug-console-anchor" style="height: 1px; min-height: 1px; flex: 0 0 auto;"></div>
+        
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" 
+             style="display:none;" 
+             onload="
+                (function() {{
+                    var el = document.getElementById('debug-console-container');
+                    if (el) {{
+                        var threshold = 150;
+                        var isAtBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < threshold;
+                        // Si estamos cerca del final o es la primera vez (scrollTop 0), forzamos scroll
+                        if (isAtBottom || el.scrollTop === 0) {{
+                            var scrollDown = function() {{ el.scrollTop = el.scrollHeight; }};
+                            scrollDown();
+                            setTimeout(scrollDown, 20);
+                            setTimeout(scrollDown, 100);
+                        }}
+                    }}
+                }})();
+             ">
     </div>
-    <script>
-        var el = document.getElementById("debug-console-container");
-        if (el) {{
-            el.scrollTop = el.scrollHeight;
-        }}
-    </script>
     '''
 
 def render_image_html(image_path, title="2D Preview"):
@@ -231,8 +256,8 @@ def render_image_html(image_path, title="2D Preview"):
     with open(image_path, "rb") as f:
         img_data = base64.b64encode(f.read()).decode('utf-8')
     return f'''
-    <div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 12px; text-align: center;">
-        <img src="data:image/png;base64,{img_data}" style="max-width: 100%; height: auto; border-radius: 6px;" alt="{title}"/>
+    <div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 12px; text-align: center; display: flex; justify-content: center; align-items: center;">
+        <img src="data:image/png;base64,{img_data}" style="width: 66%; height: auto; border-radius: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);" alt="{title}"/>
     </div>
     '''
 
@@ -247,7 +272,7 @@ def create_dual_progress_html(total_pct, total_rem, step_name, step_pct, step_re
                     <span style="font-size: 20px; font-weight: 700; color: #fafafa;">💇‍♀️ Total Progress</span>
                     <span style="color: #a1a1aa; font-size: 14px;">~{format_time(total_rem)} remaining</span>
                 </div>
-                <span style="background: {main_color}33; color: {main_color}; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 700;">{int(total_pct)}%</span>
+                <span style="background: {main_color}33; color: {main_color}; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 700;">{int(total_pct + 0.5)}%</span>
             </div>
             <div style="background: #3f3f46; height: 12px; border-radius: 6px; overflow: hidden;">
                 <div style="width: {total_pct}%; height: 100%; background: linear-gradient(90deg, {main_color}, {main_color}cc); transition: width 0.5s ease-in-out;"></div>
@@ -259,7 +284,7 @@ def create_dual_progress_html(total_pct, total_rem, step_name, step_pct, step_re
                     <span style="font-size: 15px; font-weight: 600; color: #e4e4e7;">{step_name}</span>
                     <span style="color: #71717a; font-size: 12px;">~{format_time(step_rem)}</span>
                 </div>
-                <span style="color: #a5b4fc; font-size: 13px; font-weight: 600;">{int(step_pct)}%</span>
+                <span style="color: #a5b4fc; font-size: 13px; font-weight: 600;">{int(step_pct + 0.5)}%</span>
             </div>
             <div style="background: #3f3f46; height: 6px; border-radius: 3px; overflow: hidden;">
                 <div style="width: {step_pct}%; height: 100%; background: linear-gradient(90deg, #a5b4fc, #818cf8); transition: width 0.3s ease-in-out;"></div>
@@ -270,16 +295,15 @@ def create_dual_progress_html(total_pct, total_rem, step_name, step_pct, step_re
 
 def create_complete_html():
     return f'''
-    <div style="padding: 20px; background: linear-gradient(135deg, #18181b 0%, #27272a 100%); border-radius: 12px; border: 1px solid #34d39966; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <span style="font-size: 28px;">🎉</span>
-                <span style="font-size: 20px; font-weight: 700; color: #34d399;">Completed!</span>
+    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; border-radius: 8px; padding: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">✅</span>
+                <div>
+                    <div style="color: #10b981; font-weight: 700; font-size: 14px;">100% COMPLETE</div>
+                    <div style="color: #6ee7b7; font-size: 12px;">All assets generated and ready for download.</div>
+                </div>
             </div>
-            <span style="background: #34d39933; color: #34d399; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 700;">100%</span>
-        </div>
-        <div style="background: #3f3f46; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 12px;">
-            <div style="width: 100%; height: 100%; background: linear-gradient(90deg, #34d399, #22c55e);"></div>
         </div>
     </div>
     '''
@@ -403,105 +427,135 @@ def generate_preview_3d(npz_path, log_capture=None):
             return None
             
         num_strands, points_per_strand, _ = positions.shape
+        if num_strands == 0:
+            if log_capture: log_capture.add_log("⚠️ 3D Preview: No strands found in data")
+            return None
+
         if log_capture: log_capture.add_log(f"🎨 Interactive 3D: Loaded {num_strands} strands, {points_per_strand} points")
         
-        # If it's already a preview (few strands), don't downsample much
-        # If it's the full file, downsample aggressively
-        if num_strands > 1000:
-            target_strands = 500
-            strand_step = num_strands // target_strands
-        else:
-            strand_step = 1
-            
-        target_points = 32
+        # Balanced strand count for speed and quality
+        target_strands = 1000
+        strand_step = max(1, num_strands // target_strands)
+        
+        # Downsampling points per strand to 24 for better performance/look
+        # Original is usually 32 points
+        target_points = 24
         point_step = max(1, points_per_strand // target_points)
         
         subset = positions[::strand_step, ::point_step, :]
         n_s, n_p, _ = subset.shape
         
-        if log_capture: log_capture.add_log(f"🎨 Interactive 3D: Rendering {n_s} strands...")
+        if log_capture:
+            log_capture.add_log(f"🎨 Interactive 3D: Rendering {n_s} strands with {n_p} points each")
         
-        x = subset[:, :, 0]
-        y = -subset[:, :, 2]
-        z = subset[:, :, 1]
+        # Rotation and axis adjustment (matching Kaggle workflow)
+        x_base = subset[:, :, 0]
+        y_base = -subset[:, :, 2]
+        z_base = subset[:, :, 1]
         
         theta = np.radians(180)
         c, s = np.cos(theta), np.sin(theta)
-        fx = x * c + y * s
-        fy = -x * s + y * c
-        fz = z
+        fx = x_base * c + y_base * s
+        fy = -x_base * s + y_base * c
+        fz = z_base
         
-        nan_col = np.full((n_s, 1), np.nan)
-        x_plot = np.hstack([fx, nan_col]).flatten()
-        y_plot = np.hstack([fy, nan_col]).flatten()
-        z_plot = np.hstack([fz, nan_col]).flatten()
+        # Color calculation (Gradient from root to tip)
+        t = np.linspace(0, 1, n_p)
         
-        np.random.seed(42)
-        colors_flat = []
-        for s_idx in range(n_s):
-            brightness_var = 0.85 + np.random.random() * 0.30
-            for p_idx in range(n_p):
-                t = p_idx / max(1, n_p - 1)
-                base_val = 0.2 + t * 0.75
-                val = np.clip(base_val * brightness_var, 0.1, 1.0)
-                colors_flat.append(val)
-            colors_flat.append(0.5)
+        # ULTRA group_size for maximum speed
+        # With 1000 strands, grouping by 250 means only 4 objects total
+        traces = []
+        group_size = 250
+        for i in range(0, n_s, group_size):
+            end_idx = min(i + group_size, n_s)
+            
+            g_fx = fx[i:end_idx]
+            g_fy = fy[i:end_idx]
+            g_fz = fz[i:end_idx]
+            
+            gn_s = g_fx.shape[0]
+            nan_col = np.full((gn_s, 1), np.nan)
+            
+            gx_plot = np.hstack([g_fx, nan_col]).flatten().tolist()
+            gy_plot = np.hstack([g_fy, nan_col]).flatten().tolist()
+            gz_plot = np.hstack([g_fz, nan_col]).flatten().tolist()
+            
+            # Use 't' as color index for each point + 0 for the NaN
+            g_color_idx = np.tile(np.append(t, 0), gn_s)
+            
+            traces.append(go.Scatter3d(
+                x=gx_plot, y=gy_plot, z=gz_plot,
+                mode='lines',
+                line=dict(
+                    width=2.2, # Slightly thicker as requested
+                    color=g_color_idx.tolist(),
+                    colorscale=[
+                        [0.0, 'rgb(51, 51, 51)'],       # Raíz: Gris oscuro (Sólido)
+                        [0.5, 'rgb(255, 255, 255)'],    # Centro: Blanco brillante (Sólido)
+                        [1.0, 'rgb(30, 30, 35)']        # Puntas: Gris muy oscuro (Para fundir con el fondo #18181b)
+                    ],
+                ),
+                hoverinfo='none',
+                showlegend=False
+            ))
         
-        color_array = np.array(colors_flat)
-        colorscale = [
-            [0.0, 'rgb(30,30,30)'],
-            [0.2, 'rgb(60,60,60)'],
-            [0.4, 'rgb(100,100,100)'],
-            [0.6, 'rgb(160,160,160)'],
-            [0.8, 'rgb(210,210,210)'],
-            [1.0, 'rgb(250,250,250)']
-        ]
+        # 2. NO REFERENCE MARKERS (Removed red dot as requested)
         
-        fig = go.Figure(data=[go.Scatter3d(
-            x=x_plot, y=y_plot, z=z_plot,
-            mode='lines',
-            line=dict(width=2, color=color_array, colorscale=colorscale, showscale=False),
-            hoverinfo='none'
-        )])
+        fig = go.Figure(data=traces)
         
         fig.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            template="plotly_dark",
+            paper_bgcolor='#18181b',
+            plot_bgcolor='#18181b',
             scene=dict(
-                xaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showbackground=False),
-                yaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showbackground=False),
-                zaxis=dict(visible=False, showgrid=False, showline=False, zeroline=False, showbackground=False),
-                bgcolor='rgba(0,0,0,0)',
-                dragmode='orbit',
-                camera=dict(eye=dict(x=0, y=-1.8, z=0.3), up=dict(x=0, y=0, z=1)),
+                xaxis=dict(visible=False), # Hide grids as requested
+                yaxis=dict(visible=False),
+                zaxis=dict(visible=False),
+                bgcolor='#18181b',
+                dragmode='turntable', 
+                camera=dict(
+                    eye=dict(x=1.2, y=1.2, z=0.8),
+                    center=dict(x=0, y=0, z=0),
+                    up=dict(x=0, y=0, z=1)
+                ),
                 aspectmode='data'
             ),
             margin=dict(l=0, r=0, b=0, t=0),
-            height=550,
-            showlegend=False
-        )
+                height=600,
+                showlegend=False,
+                modebar=dict(
+                    bgcolor='rgba(0,0,0,0)',
+                    color='#a1a1aa',
+                    activecolor='#ffffff'
+                ),
+                uirevision=True,
+                scene_camera_projection_type='perspective'
+            )
         
-        if log_capture: log_capture.add_log("✅ Interactive 3D: Plot created successfully")
-        del positions, subset, x, y, z, fx, fy, fz, x_plot, y_plot, z_plot, color_array
-        gc.collect()
+        if log_capture:
+            log_capture.add_log(f"✅ Hybrid 3D: Plot created with {len(traces)} groups")
         return fig
     except Exception as e:
-        if log_capture: log_capture.add_log(f"❌ Error in Interactive 3D: {e}")
+        if log_capture: 
+            log_capture.add_log(f"❌ Error in Interactive 3D: {str(e)}")
+            import traceback
+            log_capture.add_log(traceback.format_exc())
         return None
 
 def create_empty_3d_plot(message="🎨 Interactive 3D preview will appear here after generation"):
     fig = go.Figure()
     fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='#18181b',
+        plot_bgcolor='#18181b',
         scene=dict(
-            bgcolor='rgba(0,0,0,0)',
+            bgcolor='#18181b',
             xaxis=dict(visible=False, showgrid=False, showbackground=False),
             yaxis=dict(visible=False, showgrid=False, showbackground=False),
             zaxis=dict(visible=False, showgrid=False, showbackground=False),
         ),
         margin=dict(l=0, r=0, b=0, t=0),
         height=550,
+        autosize=True,
         annotations=[dict(
             text=message,
             xref="paper", yref="paper",
@@ -604,9 +658,12 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()), 
             generate_btn: gr.update(interactive=False),
-            plot_3d: create_empty_3d_plot("⏳ Initializing..."),
+            plot_3d: None,
             preview_2d: render_image_html(None),
-            download_file: []
+            download_file: [],
+            result_group: gr.update(visible=False),
+            plot_3d_accordion: gr.update(visible=False),
+            download_group: gr.update(visible=False)
         }
         
         # Load model
@@ -618,6 +675,11 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         
         # Run model
         model.cfg_val = float(cfg_scale)
+        
+        # We need to make sure plot_3d_fig is initialized for the finally block
+        plot_3d_fig = None
+        
+        # Generator approach for real-time updates
         for update in model.file2hair(str(img_path), str(job_dir), cfg_val=float(cfg_scale), progress=progress):
             if isinstance(update, tuple):
                 dtype, val = update[0], update[1]
@@ -628,12 +690,13 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
                 elif dtype == "error":
                     raise Exception(val)
             
-            # Update progress tracker based on time passing more frequently
+            # Yield every single update to ensure real-time log/progress
             yield {
                 status_html: create_dual_progress_html(*tracker.get_progress()),
                 debug_console: render_debug_console(log_capture.get_logs()),
-                plot_3d: create_empty_3d_plot(f"⏳ {tracker.get_phase_name()}..."),
-                download_file: []
+                result_group: gr.update(visible=False),
+                plot_3d_accordion: gr.update(visible=False), # Keep 3D hidden during inference
+                download_group: gr.update(visible=False) # Keep downloads hidden
             }
 
         npz_path = job_dir / "difflocks_output_strands.npz"
@@ -644,99 +707,103 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()),
-            plot_3d: create_empty_3d_plot("⏳ Creating 2D preview..."),
-            download_file: []
+            # KEEP 3D HIDDEN during 2D generation
+            plot_3d_accordion: gr.update(visible=False),
+            download_group: gr.update(visible=False)
         }
         preview_img_path = generate_preview_2d(npz_path, job_dir, log_capture)
         preview_2d_html = render_image_html(preview_img_path)
-        # Show 2D preview as soon as it's ready
+        
+        # Show 2D preview as soon as it's ready, but STILL keep 3D HIDDEN
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()),
             preview_2d: preview_2d_html,
             result_group: gr.update(visible=True),
             debug_console: render_debug_console(log_capture.get_logs()),
-            plot_3d: create_empty_3d_plot("⏳ Creating interactive 3D..."),
-            download_file: []
+            plot_3d_accordion: gr.update(visible=False, open=False), # DO NOT SHOW 3D YET
+            download_group: gr.update(visible=False)
         }
         
         tracker.set_phase("preview_3d")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: [] 
+            plot_3d_accordion: gr.update(visible=False), # Still hidden
+            download_group: gr.update(visible=False) 
         }
         
         # Use optimized preview if available
         preview_npz = job_dir / "difflocks_output_strands_preview.npz"
+        # Wait a tiny bit for filesystem sync if needed
+        for _ in range(5):
+            if preview_npz.exists(): break
+            time.sleep(1)
+            
         plot_3d_fig = generate_preview_3d(preview_npz if preview_npz.exists() else npz_path, log_capture)
-        if plot_3d_fig is None: plot_3d_fig = create_empty_3d_plot()
-        # Show 3D preview as soon as it's ready
-        yield {
-            status_html: create_dual_progress_html(*tracker.get_progress()),
-            plot_3d: plot_3d_fig,
-            debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: []
-        }
+        
+        # 3D is ready - NOW we show it
+        if plot_3d_fig:
+            yield {
+                status_html: create_dual_progress_html(*tracker.get_progress()),
+                plot_3d: plot_3d_fig, # Use the figure directly
+                plot_3d_accordion: gr.update(visible=True, open=True),
+                debug_console: render_debug_console(log_capture.get_logs()),
+                download_group: gr.update(visible=False)
+            }
+        else:
+            yield {
+                status_html: create_dual_progress_html(*tracker.get_progress()),
+                plot_3d: gr.update(value=create_empty_3d_plot("⚠️ Could not render 3D (Empty Figure)")),
+                plot_3d_accordion: gr.update(visible=True, open=True),
+                debug_console: render_debug_console(log_capture.get_logs()),
+                download_group: gr.update(visible=False)
+            }
         
         tracker.set_phase("obj_export")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: []
+            download_group: gr.update(visible=False)
         }
         obj_path = job_dir / "hair.obj"
         export_obj(npz_path, obj_path, log_capture)
         yield { 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: []
+            download_group: gr.update(visible=False)
         }
         
         tracker.set_phase("blender")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: []
+            download_group: gr.update(visible=False)
         }
         blender_outputs = export_blender(npz_path, job_dir, export_formats, log_capture)
         yield { 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: []
+            download_group: gr.update(visible=False)
         }
         
-        tracker.set_phase("zip")
-        yield { 
-            status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: []
-        }
-        zip_path = job_dir / "DiffLocks_Results.zip"
-        try:
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                # Include everything except the huge main .npz if we want it smaller, 
-                # but usually users want the main npz. Let's keep it but skip redundant files.
-                for f in [str(npz_path), preview_img_path, str(obj_path)] + blender_outputs:
-                    if f and Path(f).exists():
-                        zf.write(f, Path(f).name)
-        except Exception as e:
-            log_capture.add_log(f"⚠️ Zip error (skipping): {e}")
+        # ZIP creation removed per user request
+        # 12. Final completion
+        log_capture.add_log("✨ Process finished successfully!")
         
-        # Final yield with all files (ZIP is optional/last)
-        final_files = [str(npz_path), preview_img_path, str(obj_path)] + blender_outputs
-        final_files = [f for f in final_files if f and Path(f).exists()]
-        
-        # Add ZIP at the beginning of the list if it exists
-        if zip_path.exists():
-            final_files.insert(0, str(zip_path))
-
         # Track completion
         tracker.get_progress(is_complete=True)
         
+        # Ensure we return 100% and show all results
+        final_status = create_complete_html()
+        final_downloads = [str(f) for f in [obj_path] + [Path(p) for p in blender_outputs if p] if f and Path(f).exists()]
+        
+        # Final result yield
         yield {
-            plot_3d: plot_3d_fig,
-            preview_2d: preview_2d_html,
-            status_html: create_complete_html(),
+            plot_3d: gr.update(value=plot_3d_fig if plot_3d_fig else create_empty_3d_plot("⚠️ Preview not available")),
+            plot_3d_accordion: gr.update(visible=True),
+            preview_2d: preview_2d_html if 'preview_2d_html' in locals() else gr.update(),
+            status_html: final_status,
             result_group: gr.update(visible=True),
-            download_file: final_files,
+            download_file: final_downloads,
+            download_group: gr.update(visible=True), 
             debug_console: render_debug_console(log_capture.get_logs()),
             generate_btn: gr.update(interactive=True)
         }
@@ -810,6 +877,7 @@ footer { display: none !important; }
     border: 1px solid #3f3f46 !important;
     border-radius: 8px !important;
     min-height: 550px !important;
+    overflow: visible !important;
 }
 
 .js-plotly-plot .modebar {
@@ -828,6 +896,11 @@ footer { display: none !important; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: #18181b; }
 ::-webkit-scrollbar-thumb { background: #52525b; border-radius: 4px; }
+
+/* === PLOTLY OVERRIDE === */
+.js-plotly-plot, .plotly, .user-select-none {
+    background: #18181b !important;
+}
 """
 
 js_func = """
@@ -948,16 +1021,15 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
             status_html = gr.HTML(value=create_dual_progress_html(0, 0, "Ready to start", 0, 0))
             
             with gr.Group(visible=False) as result_group:
-                with gr.Tabs():
-                    with gr.Tab("🎨 3D Preview"):
-                        plot_3d = gr.Plot(value=create_empty_3d_plot(), label="Interactive 3D")
-                    
-                    with gr.Tab("🖼️ 2D Preview"):
-                        preview_2d = gr.HTML(render_image_html(None))
-
-                with gr.Group():
+                # Layout optimizado: 2D arriba, 3D abajo (solo cuando esté listo)
+                preview_2d = gr.HTML(render_image_html(None))
+                
+                with gr.Accordion("🎨 Interactive 3D Preview", open=True, visible=False) as plot_3d_accordion:
+                    plot_3d = gr.Plot(label="Interactive 3D")
+                
+                with gr.Group(visible=False) as download_group:
                     gr.Markdown("### 📥 Download Results")
-                    download_file = gr.File(label="Generated Assets (.zip)", file_count="multiple")
+                    download_file = gr.File(label="Generated Assets", file_count="multiple")
 
             with gr.Accordion("📜 Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))
@@ -965,7 +1037,7 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
     generate_btn.click(
         fn=run_inference,
         inputs=[image_input, cfg_slider, format_checkboxes],
-        outputs=[plot_3d, preview_2d, status_html, result_group, download_file, debug_console, generate_btn]
+        outputs=[plot_3d, preview_2d, status_html, result_group, download_file, debug_console, generate_btn, plot_3d_accordion, download_group]
     )
 
 if __name__ == "__main__":

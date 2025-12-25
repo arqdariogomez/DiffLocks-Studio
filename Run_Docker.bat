@@ -21,9 +21,17 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 
 echo.
 echo Starting Docker containers...
-docker compose down --remove-orphans
-docker rm -f difflocks_studio >nul 2>&1
-docker compose up --build
+:: Normal start (no build)
+echo.
+echo Starting container in background...
+docker compose up -d
+echo Container started.
+echo.
+echo To see logs, run: docker logs -f difflocks_studio
+echo.
+echo Waiting for Gradio to be ready...
+timeout /t 5 >nul
+start http://localhost:7860
 
 if %errorlevel% neq 0 (
     echo.

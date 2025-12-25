@@ -295,19 +295,27 @@ class DiffLocksInference():
             yield "log", f"🎨 Starting sampling ({self.nr_iters_denoise} steps)... This will take a few minutes."
             
             def p_callback(info):
+                i = info['i']
                 if progress is not None:
-                    i = info['i']
                     progress(0.2 + 0.6 * (i / self.nr_iters_denoise), desc=f"Diffusion {i}/{self.nr_iters_denoise}")
-                if info['i'] % 10 == 0:
-                    print(f"🔄 Diffusion: Step {info['i']}/{self.nr_iters_denoise} (sigma={info['sigma']:.4f})")
-
+                
+                # Yield logs to app.py every 10 steps
+                if i % 10 == 0:
+                    # We can't 'yield' from inside a callback function directly in Python, 
+                    # but we can print for the terminal and let the outer loop handle the yielding.
+                    print(f"🔄 Diffusion: Step {i}/{self.nr_iters_denoise} (sigma={info['sigma']:.4f})")
+            
             # Sampling (No autocast to match reference)
             # Use yielding version for progress updates
             scalp = None
+            last_log_step = -1
             for x_step, i, sigma in sample_images_cfg_yield(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra, callback=p_callback):
                 scalp = x_step
-                # We can optionally yield more frequent logs here if we wanted
-                pass
+                
+                # Manually yield to the generator every 10 steps to update UI
+                if i % 10 == 0 and i != last_log_step:
+                    yield "log", f"🔄 Diffusion Step {i}/{self.nr_iters_denoise}..."
+                    last_log_step = i
             
             # NaN Check
             if torch.isnan(scalp).any():
@@ -386,17 +394,21 @@ class DiffLocksInference():
                 
                 # Save preview version (optimized for 3D plot)
                 try:
+                    # Optimized for 3D preview: 1000 strands and 24 points per strand
                     num_strands = positions.shape[0]
-                    # Target around 500 strands for a fast interactive preview
-                    target_strands = 500 
-                    if num_strands > target_strands:
-                        step = num_strands // target_strands
-                        preview_positions = positions[::step]
-                    else:
-                        preview_positions = positions
+                    points_per_strand = positions.shape[1]
+                    
+                    # 1. Target exactly ~1000 strands
+                    strand_step = max(1, num_strands // 1000)
+                    
+                    # 2. Reduce points to 24 per strand
+                    target_points = 24
+                    point_step = max(1, points_per_strand // target_points)
+                    
+                    preview_positions = positions[::strand_step, ::point_step, :]
                     
                     np.savez_compressed(npz_preview_path, positions=preview_positions)
-                    yield "log", f"✅ Optimized preview: {preview_positions.shape[0]} strands"
+                    yield "log", f"✅ Optimized preview: {preview_positions.shape[0]} strands, {preview_positions.shape[1]} points"
                 except Exception as e:
                     yield "log", f"⚠️ Error creating optimized preview: {e}"
                 
