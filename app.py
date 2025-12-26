@@ -343,6 +343,7 @@ def download_checkpoints_hf():
         return False
     
     print(f"🔍 [HF SPACES] Missing checkpoints at {cfg.checkpoints_dir}. Attempting auto-download...")
+    ckpt_dir = cfg.checkpoints_dir
     diffusion_dir = ckpt_dir / "difflocks_diffusion"
     vae_dir = ckpt_dir / "strand_vae"
     
