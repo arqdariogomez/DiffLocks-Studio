@@ -356,6 +356,7 @@ def download_checkpoints_hf():
     
     # Check if we already have the main files
     if list(diffusion_dir.glob("scalp_*.pth")) and list(vae_dir.glob("strand_codec.pt")):
+        print(f"✅ [HF SPACES] Checkpoints verified in {ckpt_dir}")
         return True
 
     print(f"🚀 [HF SPACES] Downloading missing checkpoints to {ckpt_dir}...")
@@ -1072,7 +1073,7 @@ dark_theme = gr.themes.Base(
 with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) as demo:
     # Checkpoint warning and download button
     if not ckpt_files:
-        with gr.Container(variant="panel"):
+        with gr.Box():
             gr.Markdown("### ⚠️ Missing Checkpoints")
             gr.Markdown(f"Checkpoints not found in `{cfg.checkpoints_dir}`. If you are on HF Spaces, make sure `HF_TOKEN` is set.")
             with gr.Row():
