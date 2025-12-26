@@ -8,6 +8,9 @@
 # ============================================================================
 
 import os
+# Force non-interactive backend for Matplotlib to avoid Colab/Kaggle errors
+os.environ['MPLBACKEND'] = 'Agg'
+
 import sys
 import time
 import shutil
@@ -408,13 +411,24 @@ def download_checkpoints_hf():
             ignore_patterns=["*.md", ".git*"]
         )
         
-        # After download, check if we need to update checkpoints_dir if it was nested
-        if (cfg.repo_dir / "checkpoints").exists():
-            cfg.checkpoints_dir = cfg.repo_dir / "checkpoints"
-            print(f"✅ [HF SPACES] Checkpoints dir updated to: {cfg.checkpoints_dir}")
+    # After download, check if we need to update checkpoints_dir
+    # We look for where 'difflocks_diffusion' actually ended up
+    possible_locations = [
+        cfg.repo_dir,
+        cfg.repo_dir / "checkpoints",
+        cfg.repo_dir / "checkpoints" / "checkpoints", # Handle double nesting if it happened
+        Path("/data"), # HF Persistent storage
+        Path("/data/checkpoints")
+    ]
+    
+    for loc in possible_locations:
+        if (loc / "difflocks_diffusion").exists() and list((loc / "difflocks_diffusion").glob("scalp_*.pth")):
+            cfg.checkpoints_dir = loc
+            print(f"✅ [HF SPACES] Found checkpoints in: {cfg.checkpoints_dir}")
+            break
 
-        print("✅ [HF SPACES] All assets downloaded successfully.")
-        return True
+    print("✅ [HF SPACES] All assets downloaded successfully.")
+    return True
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
         print("💡 Ensure MESH_USER/MESH_PASS or HF_TOKEN are set in Space Secrets.")
@@ -426,6 +440,19 @@ download_checkpoints_hf()
 checkpoints_dir = cfg.checkpoints_dir
 ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
 vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
+
+# If still not found, try one last search in the entire repo (recursive)
+if not ckpt_files:
+    print("🔍 [DEBUG] Checkpoints not in primary path. Searching recursively in repo...")
+    for p in cfg.repo_dir.rglob("scalp_*.pth"):
+        checkpoints_dir = p.parent.parent # The parent of 'difflocks_diffusion'
+        cfg.checkpoints_dir = checkpoints_dir
+        ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
+        vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
+        if ckpt_files:
+            print(f"🎯 [DEBUG] Found checkpoints recursively at: {checkpoints_dir}")
+            break
+
 conf_path = cfg.configs_dir / "config_scalp_texture_conditional.json"
 
 print(f"[{cfg.platform.upper()}] Searching for checkpoints in: {checkpoints_dir.absolute()}")
@@ -1071,21 +1098,49 @@ dark_theme = gr.themes.Base(
 )
 
 with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) as demo:
-    # Checkpoint warning and download button
+    # --- 8.0. MISSING CHECKPOINTS NOTICE ---
     if not ckpt_files:
         with gr.Box():
-            gr.Markdown("### ⚠️ Missing Checkpoints")
-            gr.Markdown(f"Checkpoints not found in `{cfg.checkpoints_dir}`. If you are on HF Spaces, make sure `HF_TOKEN` is set.")
+            gr.Markdown(f"""
+                <div style="padding: 20px; border: 2px solid #fbbf24; border-radius: 12px; background: rgba(251, 191, 36, 0.05);">
+                    <h2 style="color: #fbbf24; margin-top: 0;">💇‍♀️ Welcome to DiffLocks Studio!</h2>
+                    <p style="font-size: 16px; line-height: 1.5;">
+                        We noticed that the <b>required model checkpoints</b> have not been assigned yet. 
+                        To generate high-fidelity 3D hair, you need the official DiffLocks weights.
+                    </p>
+                    <div style="display: flex; gap: 20px; margin: 20px 0;">
+                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <h3 style="margin-top: 0; font-size: 14px; color: #e4e4e7;">🚀 Quick Setup</h3>
+                            <ul style="font-size: 13px; color: #a1a1aa; padding-left: 20px;">
+                                <li><b>Hugging Face:</b> Add <code>HF_TOKEN</code> to Space Secrets.</li>
+                                <li><b>Colab/Kaggle:</b> Follow the login prompts in the notebook.</li>
+                                <li><b>Local:</b> Place weights in <code>./checkpoints/</code></li>
+                            </ul>
+                        </div>
+                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <h3 style="margin-top: 0; font-size: 14px; color: #e4e4e7;">📖 Need Help?</h3>
+                            <p style="font-size: 13px; color: #a1a1aa;">
+                                Check the detailed instructions in our <a href="https://github.com/arqdariogomez/DiffLocks-Studio" target="_blank" style="color: #fbbf24; text-decoration: underline;">GitHub README</a>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            """, elem_id="missing-ckpt-notice")
+            
             with gr.Row():
-                manual_download_btn = gr.Button("🚀 Download Checkpoints Now", variant="primary")
-                status_download = gr.Markdown("")
+                with gr.Column(scale=2):
+                    manual_download_btn = gr.Button("🚀 Attempt Auto-Download Now", variant="primary")
+                with gr.Column(scale=3):
+                    status_download = gr.Markdown("*(Click only if you have already set up your HF_TOKEN or Meshcapade credentials)*")
             
             def manual_download():
                 try:
-                    download_checkpoints_hf()
-                    return "✅ Download complete! Please refresh the page or click 'Generate' to try again."
+                    success = download_checkpoints_hf()
+                    if success:
+                        return "✅ **Success!** Checkpoints found or downloaded. **Please restart/refresh the Space** to load them into memory."
+                    return "❌ **Failed:** Could not find checkpoints. Please check your credentials and try again."
                 except Exception as e:
-                    return f"❌ Download failed: {str(e)}"
+                    return f"❌ **Error:** {str(e)}"
             
             manual_download_btn.click(fn=manual_download, outputs=status_download)
 
