@@ -328,19 +328,21 @@ def download_checkpoints_hf():
         print(f"✅ Found checkpoints in: {cfg.checkpoints_dir}")
         return True
     
-    # Priority 2: Fallback to local 'checkpoints' directory in repo
-    local_path = Path("./checkpoints")
-    if local_path.exists() and (local_path / "difflocks_diffusion").exists():
-        print(f"✅ Found checkpoints in local repo: {local_path.absolute()}")
-        # Update config dynamically
-        cfg.checkpoints_dir = local_path
+    # Priority 3: Fallback to /app/checkpoints/checkpoints (if dataset was downloaded with nested folder)
+    nested_path = cfg.checkpoints_dir / "checkpoints"
+    if nested_path.exists() and (nested_path / "difflocks_diffusion").exists():
+        print(f"✅ Found nested checkpoints in: {nested_path}")
+        cfg.checkpoints_dir = nested_path
         return True
 
-    if cfg.platform != 'huggingface': 
+    # If we are on HF but detection failed, try to force it if we are in /app
+    is_hf = cfg.platform == 'huggingface' or os.environ.get('SPACE_ID') or Path("/app").exists()
+    
+    if not is_hf: 
         print(f"❌ Missing checkpoints! Search path: {cfg.checkpoints_dir}")
         return False
     
-    ckpt_dir = cfg.checkpoints_dir
+    print(f"🔍 [HF SPACES] Missing checkpoints at {cfg.checkpoints_dir}. Attempting auto-download...")
     diffusion_dir = ckpt_dir / "difflocks_diffusion"
     vae_dir = ckpt_dir / "strand_vae"
     
@@ -369,13 +371,17 @@ def download_checkpoints_hf():
         from huggingface_hub import snapshot_download
         token = os.environ.get("HF_TOKEN")
         
-        # 1. Download Checkpoints to checkpoints_dir
-        print(f"🔹 [HF SPACES] Downloading models to {cfg.checkpoints_dir}...")
+        # 1. Download Checkpoints
+        # We allow both nested "checkpoints/..." and root "difflocks_diffusion/..."
+        print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")
         snapshot_download(
             repo_id="arqdariogomez/difflocks-assets-hybrid",
             repo_type="dataset",
-            allow_patterns=["difflocks_diffusion/*", "strand_vae/*", "rgb2material/*"],
-            local_dir=str(cfg.checkpoints_dir),
+            allow_patterns=[
+                "difflocks_diffusion/*", "strand_vae/*", "rgb2material/*",
+                "checkpoints/difflocks_diffusion/*", "checkpoints/strand_vae/*", "checkpoints/rgb2material/*"
+            ],
+            local_dir=str(cfg.repo_dir), # Download to repo root to handle "checkpoints/" folder naturally
             local_dir_use_symlinks=False,
             token=token if token else None,
             ignore_patterns=["*.md", ".git*"]
@@ -386,14 +392,20 @@ def download_checkpoints_hf():
         snapshot_download(
             repo_id="arqdariogomez/difflocks-assets-hybrid",
             repo_type="dataset",
-            allow_patterns=["assets/*"],
-            local_dir=str(cfg.repo_dir / "inference"),
+            allow_patterns=["assets/*", "inference/assets/*"],
+            local_dir=str(cfg.repo_dir),
             local_dir_use_symlinks=False,
             token=token if token else None,
             ignore_patterns=["*.md", ".git*"]
         )
         
+        # After download, check if we need to update checkpoints_dir if it was nested
+        if (cfg.repo_dir / "checkpoints").exists():
+            cfg.checkpoints_dir = cfg.repo_dir / "checkpoints"
+            print(f"✅ [HF SPACES] Checkpoints dir updated to: {cfg.checkpoints_dir}")
+
         print("✅ [HF SPACES] All assets downloaded successfully.")
+        return True
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
         print("💡 Ensure MESH_USER/MESH_PASS or HF_TOKEN are set in Space Secrets.")

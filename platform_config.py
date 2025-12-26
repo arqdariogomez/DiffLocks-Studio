@@ -38,7 +38,7 @@ class Config:
             repo_dir = work_dir / "DiffLocks-Studio"
             blender_exe = work_dir / "blender/blender"
             needs_share = True
-        elif 'SPACE_ID' in os.environ: 
+        elif any(k in os.environ for k in ['SPACE_ID', 'SPACE_REPO_NAME', 'HF_SPACE_ID']): 
             platform = 'huggingface'
             # In HF Spaces, we want to ensure we are in /app if possible
             if Path("/app").exists():
@@ -57,7 +57,7 @@ class Config:
                 if d.exists() and os.access(str(d), os.W_OK):
                     data_dir = d
                     break
-        elif Path("/app").exists() and os.environ.get("DOCKER_CONTAINER", "false") == "true":
+        elif Path("/app").exists() and (os.environ.get("DOCKER_CONTAINER", "false") == "true" or Path("/.dockerenv").exists()):
             platform = 'docker'
             work_dir = Path("/app")
             repo_dir = Path("/app")
