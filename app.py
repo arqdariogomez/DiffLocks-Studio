@@ -324,33 +324,77 @@ def create_error_html(error_msg):
 # --- 5. MODEL LOADER ---
 from inference.img2hair import DiffLocksInference
 
-def download_checkpoints_hf():
-    """Auto-download checkpoints if on HF Spaces and missing."""
-    # 1. Quick check for existing checkpoints in multiple possible locations
-    search_paths = [
+def find_checkpoints_everywhere():
+    """Ultra-robust search for checkpoints in all possible cloud and local paths."""
+    global ckpt_files, vae_files, checkpoints_dir
+    
+    search_dirs = [
         cfg.checkpoints_dir,
         cfg.repo_dir / "checkpoints",
         Path("/data/checkpoints"),
         Path("/data"),
+        Path("/app/checkpoints"),
+        Path("/home/user/app/checkpoints"),
+        Path.cwd() / "checkpoints",
         cfg.repo_dir
     ]
     
-    for path in search_paths:
-        if path.exists() and (path / "difflocks_diffusion").exists():
-            if list((path / "difflocks_diffusion").glob("scalp_*.pth")):
-                print(f"✅ Found checkpoints in: {path}")
-                cfg.checkpoints_dir = path
+    # Remove duplicates and None
+    search_dirs = list(dict.fromkeys([d for d in search_dirs if d]))
+    
+    for d in search_dirs:
+        if not d.exists(): continue
+        
+        # Try direct subfolders (standard structure)
+        d_diff = d / "difflocks_diffusion"
+        d_vae = d / "strand_vae"
+        
+        c = list(d_diff.glob("scalp_*.pth")) if d_diff.exists() else []
+        v = list(d_vae.glob("*.pt")) if d_vae.exists() else []
+        
+        if c and v:
+            checkpoints_dir = d
+            cfg.checkpoints_dir = d
+            ckpt_files = c
+            vae_files = v
+            return True
+            
+        # Try nested subfolders (checkpoints/checkpoints/...)
+        d_nested = d / "checkpoints"
+        if d_nested.exists() and d_nested != d:
+            c = list((d_nested / "difflocks_diffusion").glob("scalp_*.pth"))
+            v = list((d_nested / "strand_vae").glob("*.pt"))
+            if c and v:
+                checkpoints_dir = d_nested
+                cfg.checkpoints_dir = d_nested
+                ckpt_files = c
+                vae_files = v
                 return True
 
-    # 2. If not found, check for nested path (checkpoints/checkpoints/...)
-    for path in search_paths:
-        nested = path / "checkpoints"
-        if nested.exists() and (nested / "difflocks_diffusion").exists():
-            print(f"✅ Found nested checkpoints in: {nested}")
-            cfg.checkpoints_dir = nested
-            return True
+    # Final attempt: recursive search in all search_dirs
+    print("🔍 [RE-SCAN] Doing a deep recursive search in all potential paths...")
+    for d in search_dirs:
+        if not d.exists(): continue
+        for p in d.rglob("scalp_*.pth"):
+            potential_dir = p.parent.parent
+            v = list((potential_dir / "strand_vae").glob("*.pt"))
+            if v:
+                checkpoints_dir = potential_dir
+                cfg.checkpoints_dir = potential_dir
+                ckpt_files = list((potential_dir / "difflocks_diffusion").glob("scalp_*.pth"))
+                vae_files = v
+                return True
+                
+    return False
 
-    # 3. Determine if we should attempt auto-download
+def download_checkpoints_hf():
+    """Auto-download checkpoints if on HF Spaces and missing."""
+    # 1. Quick check for existing checkpoints in all possible locations
+    if find_checkpoints_everywhere():
+        print(f"✅ Checkpoints already present at: {cfg.checkpoints_dir}")
+        return True
+
+    # 2. Determine if we should attempt auto-download
     is_cloud = (
         cfg.platform in ['huggingface', 'docker', 'kaggle', 'colab'] or 
         'SPACE_ID' in os.environ or 
@@ -387,37 +431,9 @@ def download_checkpoints_hf():
         if not token and cfg.platform == 'huggingface':
             print("⚠️ [HF SPACES] HF_TOKEN not found in environment variables. If the dataset is private, download will fail.")
         
-        # 1. Quick check for existing checkpoints in multiple possible locations
-        search_paths = [
-            cfg.checkpoints_dir,
-            cfg.repo_dir / "checkpoints",
-            Path("/data/checkpoints"),
-            Path("/data"),
-            cfg.repo_dir,
-            Path("/app/checkpoints")
-        ]
-        
-        for path in search_paths:
-            if path and path.exists():
-                # Forzar que el path sea un objeto Path
-                path = Path(path)
-                has_diff = (path / "difflocks_diffusion").exists() and any((path / "difflocks_diffusion").glob("scalp_*.pth"))
-                has_vae = (path / "strand_vae").exists() and any((path / "strand_vae").glob("*.pt"))
-                
-                if has_diff and has_vae:
-                    print(f"✅ [HF SPACES] Checkpoints (Diffusion & VAE) already present at: {path}")
-                    cfg.checkpoints_dir = path
-                    return True
-        
-        # 2. EMERGENCY: Global recursive search BEFORE downloading (just in case they are somewhere else)
-        print("🔍 [HF SPACES] Doing a quick recursive scan for existing models...")
-        for p in cfg.repo_dir.rglob("scalp_*.pth"):
-            if "difflocks_diffusion" in str(p):
-                potential_dir = p.parent.parent
-                if (potential_dir / "strand_vae").exists():
-                    print(f"🎯 [HF SPACES] Found existing models at: {potential_dir}")
-                    cfg.checkpoints_dir = potential_dir
-                    return True
+        # Double check before starting download
+        if find_checkpoints_everywhere():
+            return True
 
         print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")
         
@@ -467,54 +483,32 @@ def download_checkpoints_hf():
                 found_any = True
 
         if found_any:
-            cfg.checkpoints_dir = final_target
+            # Re-initialize global file lists
+            find_checkpoints_everywhere()
             print(f"🎯 [HF SPACES] Setup complete. Checkpoints at: {cfg.checkpoints_dir}")
             
-            # CRITICAL: Re-initialize global file lists so the UI knows we have them
-            global ckpt_files, vae_files
-            ckpt_files = list((final_target / "difflocks_diffusion").glob("scalp_*.pth"))
-            vae_files = list((final_target / "strand_vae").glob("strand_codec.pt"))
-            
             # Clean up
-            if download_dir.exists(): shutil.rmtree(download_dir)
+            if download_dir.exists() and not str(download_dir).startswith("/data"):
+                shutil.rmtree(download_dir)
             return True
         
-        # Final Emergency Recursive Search
-        for p in download_dir.rglob("scalp_*.pth"):
-            if p.parent.name == "difflocks_diffusion":
-                cfg.checkpoints_dir = final_target
-                shutil.move(str(p.parent.parent), str(final_target))
-                print(f"🎯 Found via emergency recursive search and moved to: {cfg.checkpoints_dir}")
-                return True
-
+        return False
+    except Exception as e:
+        print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
         return False
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
         return False
 
-# Run download check before initializing file lists
-download_checkpoints_hf()
-
-# Search for checkpoints in unified paths
+# Run initial search and download
+ckpt_files = []
+vae_files = []
 checkpoints_dir = cfg.checkpoints_dir
-ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-vae_files = list((checkpoints_dir / "strand_vae").glob("*.pt")) # More flexible search
 
-# If still not found, try one last search in the entire repo (recursive)
-if not ckpt_files:
-    print("🔍 [DEBUG] Checkpoints not in primary path. Searching recursively in repo...")
-    for p in cfg.repo_dir.rglob("scalp_*.pth"):
-        potential_dir = p.parent.parent # The parent of 'difflocks_diffusion'
-        potential_vae = list((potential_dir / "strand_vae").glob("*.pt"))
-        if potential_vae:
-            checkpoints_dir = potential_dir
-            cfg.checkpoints_dir = checkpoints_dir
-            ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-            vae_files = potential_vae
-            print(f"🎯 [DEBUG] Found checkpoints recursively at: {checkpoints_dir}")
-            break
+if not find_checkpoints_everywhere():
+    download_checkpoints_hf()
 
-# Final check and debug
+# Final debug
 print(f"[{cfg.platform.upper()}] Checkpoints Dir: {checkpoints_dir.absolute()}")
 print(f"Checkpoint files found: {len(ckpt_files)}")
 print(f"VAE files found: {len(vae_files)}")
@@ -543,32 +537,13 @@ def load_model():
     # Re-scan if lists are empty (common after auto-download)
     if not ckpt_files or not vae_files:
         print("🔍 [RE-SCAN] Looking for checkpoints before loading model...")
-        
-        # 1. Check current checkpoints_dir
-        ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-        vae_files = list((checkpoints_dir / "strand_vae").glob("*.pt"))
-        
-        # 2. If still not found, try recursive repo scan
-        if not ckpt_files:
-            print("🔍 [RE-SCAN] Not in primary path. Searching recursively...")
-            for p in cfg.repo_dir.rglob("scalp_*.pth"):
-                potential_dir = p.parent.parent
-                potential_vae = list((potential_dir / "strand_vae").glob("*.pt"))
-                if potential_vae:
-                    checkpoints_dir = potential_dir
-                    cfg.checkpoints_dir = checkpoints_dir
-                    ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-                    vae_files = potential_vae
-                    if ckpt_files: break
-
-    if not ckpt_files or not vae_files:
-        error_msg = f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}"
-        print(f"❌ {error_msg}")
-        # If we are in HF Spaces, suggest setting secrets
-        if cfg.platform == 'huggingface':
-            print("💡 Hint: If the repo is private, set HF_TOKEN in Space Secrets.")
-            print("💡 Hint: You can also set MESH_USER and MESH_PASS for official models.")
-        raise FileNotFoundError(error_msg)
+        if not find_checkpoints_everywhere():
+            error_msg = f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}"
+            print(f"❌ {error_msg}")
+            # If we are in HF Spaces, suggest setting secrets
+            if cfg.platform == 'huggingface':
+                print("💡 Hint: If the repo is private, set HF_TOKEN in Space Secrets.")
+            raise FileNotFoundError(error_msg)
     
     print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
