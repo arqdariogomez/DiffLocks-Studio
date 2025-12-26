@@ -394,58 +394,64 @@ def install():
         else:
             log("Checkpoints already present", "success")
     else:
-        log("Checkpoints not found. Checking for Google Drive mount...", "info")
-        if not Path("/content/drive").exists():
-            from google.colab import drive
-            try:
-                drive.mount('/content/drive', force_remount=True)
-            except:
-                log("Google Drive mount skipped or failed", "warning")
+        log("No checkpoints found. Starting first-time setup...", "info")
+        print("\n📂 GOOGLE DRIVE PERSISTENCE (Recommended)")
+        print("To avoid downloading 9GB every time, we can store checkpoints in your Google Drive.")
+        use_gdrive = input("Do you want to use Google Drive for persistent storage? (y/n): ").lower() == 'y'
         
-        # Check again after mount
-        current_ckpts = find_checkpoints_colab()
-        if current_ckpts:
-            if not ckpt_dir.exists():
-                ckpt_dir.symlink_to(current_ckpts)
-            log("Checkpoints linked from Google Drive", "success")
-        else:
-            log("Still no checkpoints. Asking for Meshcapade login...", "info")
-            # In Colab we can use input() or a widget
-            # Let's try to get them from environment first (if user set them)
-            mesh_user = os.environ.get("MESH_USER")
-            mesh_pass = os.environ.get("MESH_PASS")
-            
-            if not mesh_user or not mesh_pass:
-                # We show a simple input form
-                print("\n🔐 MESH CAPADE LOGIN REQUIRED")
-                print("Create an account at https://meshcapade.com if you don't have one.")
-                # FIX: Ensure we use the built-in input and force string conversion to avoid 'dict' error
+        if use_gdrive:
+            if not Path("/content/drive").exists():
+                from google.colab import drive
                 try:
-                    import builtins
-                    mesh_user = str(builtins.input("Username/Email: ")).strip()
-                    mesh_pass = str(builtins.input("Password: ")).strip()
+                    drive.mount('/content/drive', force_remount=True)
                 except:
-                    mesh_user = str(input("Username/Email: ")).strip()
-                    mesh_pass = str(input("Password: ")).strip()
+                    log("Google Drive mount failed. Proceeding with temporary storage.", "warning")
             
-            if mesh_user and mesh_pass:
-                os.environ["MESH_USER"] = mesh_user
-                os.environ["MESH_PASS"] = mesh_pass
-                log("Downloading official checkpoints from Meshcapade...", "info")
-                run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py --meshcapade", timeout=600)
-                
-                # Ask to save to Drive for next time
-                if Path("/content/drive/MyDrive").exists():
-                    save_to_drive = input("Do you want to save these checkpoints to Google Drive for next time? (y/n): ").lower() == 'y'
-                    if save_to_drive:
-                        gdrive_dest = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
-                        gdrive_dest.parent.mkdir(parents=True, exist_ok=True)
-                        log(f"Copying checkpoints to {gdrive_dest}...", "info")
-                        shutil.copytree(ckpt_dir, gdrive_dest, dirs_exist_ok=True)
-                        log("Checkpoints saved to Google Drive!", "success")
-            else:
-                log("No credentials provided. Fallback to generic download...", "warning")
-                run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py", timeout=600)
+            # Check if they exist in Drive now that it's mounted
+            current_ckpts = find_checkpoints_colab()
+            if current_ckpts:
+                if not ckpt_dir.exists():
+                    ckpt_dir.symlink_to(current_ckpts)
+                log("Checkpoints found and linked from Google Drive!", "success")
+                return # Skip download
+
+        # If we reach here, we need to download
+        log("Proceeding with model download...", "info")
+        # In Colab we can use input() or a widget
+        # Let's try to get them from environment first (if user set them)
+        mesh_user = os.environ.get("MESH_USER")
+        mesh_pass = os.environ.get("MESH_PASS")
+        
+        if not mesh_user or not mesh_pass:
+            # We show a simple input form
+            print("\n🔐 MESH CAPADE LOGIN REQUIRED")
+            print("Create an account at https://meshcapade.com if you don't have one.")
+            # FIX: Ensure we use the built-in input and force string conversion to avoid 'dict' error
+            try:
+                import builtins
+                mesh_user = str(builtins.input("Username/Email: ")).strip()
+                mesh_pass = str(builtins.input("Password: ")).strip()
+            except:
+                mesh_user = str(input("Username/Email: ")).strip()
+                mesh_pass = str(input("Password: ")).strip()
+        
+        if mesh_user and mesh_pass:
+            os.environ["MESH_USER"] = mesh_user
+            os.environ["MESH_PASS"] = mesh_pass
+            log("Downloading official checkpoints from Meshcapade...", "info")
+            run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py --meshcapade", timeout=600)
+            
+            # If GDrive was mounted, save them now
+            if Path("/content/drive/MyDrive").exists():
+                gdrive_dest = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
+                if not gdrive_dest.exists():
+                    log(f"Saving checkpoints to Google Drive for future sessions...", "info")
+                    gdrive_dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(ckpt_dir, gdrive_dest, dirs_exist_ok=True)
+                    log("Checkpoints saved to Google Drive!", "success")
+        else:
+            log("No credentials provided. Fallback to generic download...", "warning")
+            run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py", timeout=600)
 
     show_status(70, "🔍 Post-download verification...")
     np_ver = get_pkg_version_subprocess("numpy")
