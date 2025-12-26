@@ -44,6 +44,12 @@ class Config:
             repo_dir = work_dir
             blender_exe = Path("/tmp/blender/blender") 
             needs_share = False
+            
+            # Persistent storage check for HF Spaces
+            if Path("/data").exists() and os.access("/data", os.W_OK):
+                # Use /data/checkpoints if persistent storage is available
+                # but keep repo_dir as current for code access
+                pass 
         elif Path("/app").exists() and os.environ.get("DOCKER_CONTAINER", "false") == "true":
             platform = 'docker'
             work_dir = Path("/app")
@@ -66,6 +72,10 @@ class Config:
         # Set standard directories relative to repo_dir
         checkpoints_dir = repo_dir / "checkpoints"
         configs_dir = repo_dir / "configs"
+
+        # HF Spaces persistent storage override
+        if platform == 'huggingface' and Path("/data").exists() and os.access("/data", os.W_OK):
+            checkpoints_dir = Path("/data/checkpoints")
 
         # Platform-specific checkpoint overrides
         if platform == 'kaggle':

@@ -394,9 +394,14 @@ try:
     # Launch the demo with output suppression to avoid showing Gradio boilerplate
     # app.py handles the platform-specific launch_kwargs via __main__
     # but since we are importing it, we call launch here with the right parameters for Kaggle
-    with contextlib.redirect_stdout(io.StringIO()):
-        with contextlib.redirect_stderr(io.StringIO()):
-            demo.queue().launch(share=True, inline=True, height=1000, quiet=True)
+    try:
+        # We don't suppress stdout here initially to see if it starts
+        # with contextlib.redirect_stdout(io.StringIO()):
+        #     with contextlib.redirect_stderr(io.StringIO()):
+        demo.queue().launch(share=True, inline=True, height=1000, quiet=False)
+    except Exception as launch_err:
+        log(f"Gradio Launch Error: {launch_err}", "error")
+        raise launch_err
     
 except Exception as e:
     render_hud(0, f"❌ Launch Error: {e}", "error")

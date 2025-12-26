@@ -341,9 +341,12 @@ def download_checkpoints_hf():
     
     if mesh_user and mesh_pass:
         print("🔐 [HF SPACES] Using Meshcapade credentials from Environment Variables...")
-        # Here we would call the official download logic
-        # For now, it will use the download_checkpoints.py script if it was more complete
-        pass
+        # Use the download_checkpoints.py logic if available
+        try:
+            from download_checkpoints import download_from_meshcapade
+            download_from_meshcapade(mesh_user, mesh_pass, cfg.repo_dir)
+        except Exception as e:
+            print(f"⚠️ [HF SPACES] Meshcapade download helper failed: {e}")
 
     # Fallback to current HF Repo (will require token if private)
     try:
