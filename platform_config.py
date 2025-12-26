@@ -67,6 +67,25 @@ class Config:
         checkpoints_dir = repo_dir / "checkpoints"
         configs_dir = repo_dir / "configs"
 
+        # Platform-specific checkpoint overrides
+        if platform == 'kaggle':
+            # Check for connected datasets first
+            # Kaggle datasets are usually in /kaggle/input/<dataset-name>
+            potential_ckpt_dirs = [
+                Path("/kaggle/input/difflocks-checkpoints"),
+                Path("/kaggle/input/difflocks/checkpoints"),
+                repo_dir / "checkpoints"
+            ]
+            for d in potential_ckpt_dirs:
+                if d.exists() and (d / "difflocks_diffusion").exists():
+                    checkpoints_dir = d
+                    break
+        elif platform == 'colab':
+            # Check for Google Drive mount
+            gdrive_ckpt = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
+            if gdrive_ckpt.exists():
+                checkpoints_dir = gdrive_ckpt
+
         # Special case for Docker if they are mapped differently
         if platform == 'docker':
             if not checkpoints_dir.exists() and Path("/app/checkpoints").exists():

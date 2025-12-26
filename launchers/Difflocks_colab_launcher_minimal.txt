@@ -35,6 +35,20 @@ MARKER_FILE = WORK_DIR / f".difflocks_v67_{'colab' if Path('/content').exists() 
 HF_REPO_ID = "arqdariogomez/difflocks-assets-hybrid"
 MESHCAPADE_REPO = "https://github.com/Meshcapade/difflocks.git"
 
+# Dynamic Checkpoint detection for Colab
+def find_checkpoints_colab():
+    # 1. Check Google Drive first (Persistence)
+    gdrive_path = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
+    if gdrive_path.exists() and (gdrive_path / "difflocks_diffusion").exists():
+        return gdrive_path
+    
+    # 2. Check local working directory
+    local_ckpt = REPO_DIR / "checkpoints"
+    if local_ckpt.exists() and (local_ckpt / "difflocks_diffusion").exists():
+        return local_ckpt
+        
+    return None
+
 # ==============================================================================
 # UI
 # ==============================================================================
@@ -320,19 +334,66 @@ def install():
         run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} scipy==1.13.1", timeout=300)
     log(f"Verified NumPy: {get_pkg_version_subprocess('numpy')}", "success")
 
-    show_status(62, "🧠 Downloading checkpoints...")
-    hf_script = f'''
-import os
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-from huggingface_hub import snapshot_download
-token = "{get_hf_token() or ''}"
-snapshot_download(repo_id="{HF_REPO_ID}", repo_type="dataset", allow_patterns=["checkpoints/*", "assets/*"],
-    local_dir="{REPO_DIR}", local_dir_use_symlinks=False, token=token if token else None)
-print("DOWNLOAD_COMPLETE")
-'''
-    result = subprocess.run([sys.executable, "-c", hf_script], capture_output=True, text=True, timeout=600)
-    if "DOWNLOAD_COMPLETE" in result.stdout:
-        log("Checkpoints downloaded", "success")
+    show_status(62, "🧠 Setting up checkpoints...")
+    ckpt_dir = REPO_DIR / "checkpoints"
+    
+    current_ckpts = find_checkpoints_colab()
+    if current_ckpts:
+        if current_ckpts != ckpt_dir:
+            if ckpt_dir.exists() and not ckpt_dir.is_symlink():
+                shutil.rmtree(ckpt_dir)
+            if not ckpt_dir.exists():
+                ckpt_dir.symlink_to(current_ckpts)
+            log(f"Checkpoints linked from {current_ckpts}", "success")
+        else:
+            log("Checkpoints already present", "success")
+    else:
+        log("Checkpoints not found. Checking for Google Drive mount...", "info")
+        if not Path("/content/drive").exists():
+            from google.colab import drive
+            try:
+                drive.mount('/content/drive', force_remount=True)
+            except:
+                log("Google Drive mount skipped or failed", "warning")
+        
+        # Check again after mount
+        current_ckpts = find_checkpoints_colab()
+        if current_ckpts:
+            if not ckpt_dir.exists():
+                ckpt_dir.symlink_to(current_ckpts)
+            log("Checkpoints linked from Google Drive", "success")
+        else:
+            log("Still no checkpoints. Asking for Meshcapade login...", "info")
+            # In Colab we can use input() or a widget
+            # Let's try to get them from environment first (if user set them)
+            mesh_user = os.environ.get("MESH_USER")
+            mesh_pass = os.environ.get("MESH_PASS")
+            
+            if not mesh_user or not mesh_pass:
+                # We show a simple input form
+                print("\n🔐 MESH CAPADE LOGIN REQUIRED")
+                print("Create an account at https://meshcapade.com if you don't have one.")
+                mesh_user = input("Username/Email: ").strip()
+                mesh_pass = input("Password: ").strip()
+            
+            if mesh_user and mesh_pass:
+                os.environ["MESH_USER"] = mesh_user
+                os.environ["MESH_PASS"] = mesh_pass
+                log("Downloading official checkpoints from Meshcapade...", "info")
+                run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py --meshcapade", timeout=600)
+                
+                # Ask to save to Drive for next time
+                if Path("/content/drive/MyDrive").exists():
+                    save_to_drive = input("Do you want to save these checkpoints to Google Drive for next time? (y/n): ").lower() == 'y'
+                    if save_to_drive:
+                        gdrive_dest = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
+                        gdrive_dest.parent.mkdir(parents=True, exist_ok=True)
+                        log(f"Copying checkpoints to {gdrive_dest}...", "info")
+                        shutil.copytree(ckpt_dir, gdrive_dest, dirs_exist_ok=True)
+                        log("Checkpoints saved to Google Drive!", "success")
+            else:
+                log("No credentials provided. Fallback to generic download...", "warning")
+                run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py", timeout=600)
 
     show_status(70, "🔍 Post-download verification...")
     np_ver = get_pkg_version_subprocess("numpy")

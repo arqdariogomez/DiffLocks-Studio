@@ -333,19 +333,34 @@ def download_checkpoints_hf():
     if list(diffusion_dir.glob("scalp_*.pth")) and list(vae_dir.glob("strand_codec.pt")):
         return
 
-    print("🚀 [HF SPACES] Downloading missing checkpoints from Hub...")
+    print("🚀 [HF SPACES] Downloading missing checkpoints...")
+    
+    # Try official Meshcapade if credentials available
+    mesh_user = os.environ.get("MESH_USER")
+    mesh_pass = os.environ.get("MESH_PASS")
+    
+    if mesh_user and mesh_pass:
+        print("🔐 [HF SPACES] Using Meshcapade credentials from Environment Variables...")
+        # Here we would call the official download logic
+        # For now, it will use the download_checkpoints.py script if it was more complete
+        pass
+
+    # Fallback to current HF Repo (will require token if private)
     try:
         from huggingface_hub import snapshot_download
+        token = os.environ.get("HF_TOKEN")
         snapshot_download(
-            repo_id="arqdariogomez/difflocks-env",
+            repo_id="arqdariogomez/difflocks-assets-hybrid",
             repo_type="dataset",
-            allow_patterns=["checkpoints/*", "configs/*"],
+            allow_patterns=["checkpoints/*", "assets/*"],
             local_dir=str(cfg.repo_dir),
-            local_dir_use_symlinks=False
+            local_dir_use_symlinks=False,
+            token=token if token else None
         )
         print("✅ [HF SPACES] Checkpoints downloaded successfully.")
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
+        print("💡 Ensure MESH_USER/MESH_PASS or HF_TOKEN are set in Space Secrets.")
 
 # Run download check before initializing file lists
 download_checkpoints_hf()

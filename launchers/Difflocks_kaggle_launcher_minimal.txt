@@ -84,7 +84,27 @@ DATASET_PATHS = [
 ]
 LOCAL_DATASET = next((p for p in DATASET_PATHS if p.exists()), None)
 HAS_LOCAL_WHEELS = LOCAL_DATASET and (LOCAL_DATASET / "wheels").exists()
-EXTERNAL_CKPTS = Path("/kaggle/input/difflocks/checkpoints")
+
+# Dynamic Checkpoint detection
+def find_checkpoints():
+    # 1. Check common input locations (connected datasets)
+    potential_inputs = [
+        Path("/kaggle/input/difflocks-checkpoints"),
+        Path("/kaggle/input/difflocks/checkpoints"),
+        Path("/kaggle/input/checkpoints")
+    ]
+    for p in potential_inputs:
+        if p.exists() and (p / "difflocks_diffusion").exists():
+            return p
+    
+    # 2. Check if already downloaded in working directory
+    local_ckpt = REPO_DIR / "checkpoints"
+    if local_ckpt.exists() and (local_ckpt / "difflocks_diffusion").exists():
+        return local_ckpt
+        
+    return None
+
+EXTERNAL_CKPTS = find_checkpoints()
 
 # ==============================================================================
 # CONFIGURACIÓN DE FASES (BASE GPU)
@@ -284,17 +304,35 @@ def install_environment():
         render_hud(80, "🧠 Setting up checkpoints...")
         ckpt_dir = REPO_DIR / "checkpoints"
         
-        if EXTERNAL_CKPTS.exists() and EXTERNAL_CKPTS.is_dir():
-            if ckpt_dir.exists() and not ckpt_dir.is_symlink():
-                shutil.rmtree(ckpt_dir)
-            if not ckpt_dir.exists():
-                ckpt_dir.symlink_to(EXTERNAL_CKPTS)
-            log("Checkpoints linked", "success")
+        current_ckpts = find_checkpoints()
+        if current_ckpts:
+            if current_ckpts != ckpt_dir:
+                if ckpt_dir.exists() and not ckpt_dir.is_symlink():
+                    shutil.rmtree(ckpt_dir)
+                if not ckpt_dir.exists():
+                    ckpt_dir.symlink_to(current_ckpts)
+                log(f"Checkpoints linked from {current_ckpts}", "success")
+            else:
+                log("Checkpoints already present in repo", "success")
         else:
-            log(f"External checkpoints not found at {EXTERNAL_CKPTS}", "warning")
-            download_script = REPO_DIR / "download_checkpoints.py"
-            if download_script.exists() and (not ckpt_dir.exists() or not list(ckpt_dir.rglob("*.pth"))):
-                log("Downloading checkpoints...", "info")
+            log("Checkpoints not found. Checking Secrets for Meshcapade login...", "info")
+            mesh_user, mesh_pass = None, None
+            try:
+                from kaggle_secrets import UserSecretsClient
+                secrets = UserSecretsClient()
+                mesh_user = secrets.get_secret("MESH_USER")
+                mesh_pass = secrets.get_secret("MESH_PASS")
+            except:
+                log("Kaggle Secrets (MESH_USER/MESH_PASS) not found.", "warning")
+
+            if mesh_user and mesh_pass:
+                log("Starting official download from Meshcapade...", "info")
+                os.environ["MESH_USER"] = mesh_user
+                os.environ["MESH_PASS"] = mesh_pass
+                run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py --meshcapade")
+            else:
+                log("No credentials found. You can also manually connect a dataset named 'difflocks-checkpoints'", "warning")
+                # Attempt generic download as fallback (might fail if private)
                 run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py")
         
         task_path = REPO_DIR / "inference/assets/face_landmarker_v2_with_blendshapes.task"
