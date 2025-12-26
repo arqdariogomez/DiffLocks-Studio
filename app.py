@@ -421,8 +421,10 @@ def download_checkpoints_hf():
 
         print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")
         
-        # Clean temporary download dir
-        if download_dir.exists(): shutil.rmtree(download_dir)
+        # DO NOT delete download_dir if it's in /data to allow resuming large downloads
+        if not str(download_dir).startswith("/data"):
+            if download_dir.exists(): shutil.rmtree(download_dir)
+        
         download_dir.mkdir(parents=True, exist_ok=True)
         
         # Download everything to the download_dir
@@ -455,14 +457,24 @@ def download_checkpoints_hf():
             
             if source_folder:
                 dest = final_target / folder_name
-                if dest.exists(): shutil.rmtree(dest)
-                shutil.move(str(source_folder), str(final_target))
-                print(f"✅ Moved {folder_name}")
+                if dest.exists():
+                    print(f"♻️ Overwriting existing {folder_name} in {final_target}")
+                    shutil.rmtree(dest)
+                
+                # Move the folder to its exact destination, not its parent
+                shutil.move(str(source_folder), str(dest))
+                print(f"✅ Moved {folder_name} to {dest}")
                 found_any = True
 
         if found_any:
             cfg.checkpoints_dir = final_target
             print(f"🎯 [HF SPACES] Setup complete. Checkpoints at: {cfg.checkpoints_dir}")
+            
+            # CRITICAL: Re-initialize global file lists so the UI knows we have them
+            global ckpt_files, vae_files
+            ckpt_files = list((final_target / "difflocks_diffusion").glob("scalp_*.pth"))
+            vae_files = list((final_target / "strand_vae").glob("strand_codec.pt"))
+            
             # Clean up
             if download_dir.exists(): shutil.rmtree(download_dir)
             return True
@@ -486,36 +498,41 @@ download_checkpoints_hf()
 # Search for checkpoints in unified paths
 checkpoints_dir = cfg.checkpoints_dir
 ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
+vae_files = list((checkpoints_dir / "strand_vae").glob("*.pt")) # More flexible search
 
 # If still not found, try one last search in the entire repo (recursive)
 if not ckpt_files:
     print("🔍 [DEBUG] Checkpoints not in primary path. Searching recursively in repo...")
     for p in cfg.repo_dir.rglob("scalp_*.pth"):
-        checkpoints_dir = p.parent.parent # The parent of 'difflocks_diffusion'
-        cfg.checkpoints_dir = checkpoints_dir
-        ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-        vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
-        if ckpt_files:
+        potential_dir = p.parent.parent # The parent of 'difflocks_diffusion'
+        potential_vae = list((potential_dir / "strand_vae").glob("*.pt"))
+        if potential_vae:
+            checkpoints_dir = potential_dir
+            cfg.checkpoints_dir = checkpoints_dir
+            ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
+            vae_files = potential_vae
             print(f"🎯 [DEBUG] Found checkpoints recursively at: {checkpoints_dir}")
             break
 
-conf_path = cfg.configs_dir / "config_scalp_texture_conditional.json"
+# Final check and debug
+print(f"[{cfg.platform.upper()}] Checkpoints Dir: {checkpoints_dir.absolute()}")
+print(f"Checkpoint files found: {len(ckpt_files)}")
+print(f"VAE files found: {len(vae_files)}")
 
-print(f"[{cfg.platform.upper()}] Searching for checkpoints in: {checkpoints_dir.absolute()}")
-print(f"Checkpoint files found: {[str(f) for f in ckpt_files]}")
-print(f"VAE files found: {[str(f) for f in vae_files]}")
+conf_path = cfg.configs_dir / "config_scalp_texture_conditional.json"
 
 # Check if files exist
 if not ckpt_files:
     print("ERROR: No checkpoint files found (scalp_*.pth)")
     print(f"Searching in: {checkpoints_dir / 'difflocks_diffusion'}")
-    print(f"Directory contents: {list((checkpoints_dir / 'difflocks_diffusion').glob('*'))}")
+    if (checkpoints_dir / 'difflocks_diffusion').exists():
+        print(f"Directory contents: {list((checkpoints_dir / 'difflocks_diffusion').glob('*'))}")
 
 if not vae_files:
     print("ERROR: No VAE files found (strand_codec.pt)")
     print(f"Searching in: {checkpoints_dir / 'strand_vae'}")
-    print(f"Directory contents: {list((checkpoints_dir / 'strand_vae').glob('*'))}")
+    if (checkpoints_dir / 'strand_vae').exists():
+        print(f"Directory contents: {list((checkpoints_dir / 'strand_vae').glob('*'))}")
 
 model = None
 
@@ -529,17 +546,20 @@ def load_model():
         
         # 1. Check current checkpoints_dir
         ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-        vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
+        vae_files = list((checkpoints_dir / "strand_vae").glob("*.pt"))
         
         # 2. If still not found, try recursive repo scan
         if not ckpt_files:
             print("🔍 [RE-SCAN] Not in primary path. Searching recursively...")
             for p in cfg.repo_dir.rglob("scalp_*.pth"):
-                checkpoints_dir = p.parent.parent
-                cfg.checkpoints_dir = checkpoints_dir
-                ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-                vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
-                if ckpt_files: break
+                potential_dir = p.parent.parent
+                potential_vae = list((potential_dir / "strand_vae").glob("*.pt"))
+                if potential_vae:
+                    checkpoints_dir = potential_dir
+                    cfg.checkpoints_dir = checkpoints_dir
+                    ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
+                    vae_files = potential_vae
+                    if ckpt_files: break
 
     if not ckpt_files or not vae_files:
         error_msg = f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}"
