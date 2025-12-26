@@ -38,9 +38,12 @@ MESHCAPADE_REPO = "https://github.com/Meshcapade/difflocks.git"
 # Dynamic Checkpoint detection for Colab
 def find_checkpoints_colab():
     # 1. Check Google Drive first (Persistence)
-    gdrive_path = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
-    if gdrive_path.exists() and (gdrive_path / "difflocks_diffusion").exists():
-        return gdrive_path
+    # Ensure drive is mounted if path exists but is empty
+    gdrive_base = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
+    if gdrive_base.exists():
+        if (gdrive_base / "difflocks_diffusion").exists():
+            log("Checkpoints found in Google Drive!", "success")
+            return gdrive_base
     
     # 2. Check local working directory
     local_ckpt = REPO_DIR / "checkpoints"
@@ -387,8 +390,14 @@ def install():
                 # We show a simple input form
                 print("\n🔐 MESH CAPADE LOGIN REQUIRED")
                 print("Create an account at https://meshcapade.com if you don't have one.")
-                mesh_user = input("Username/Email: ").strip()
-                mesh_pass = input("Password: ").strip()
+                # FIX: Ensure we use the built-in input and force string conversion to avoid 'dict' error
+                try:
+                    import builtins
+                    mesh_user = str(builtins.input("Username/Email: ")).strip()
+                    mesh_pass = str(builtins.input("Password: ")).strip()
+                except:
+                    mesh_user = str(input("Username/Email: ")).strip()
+                    mesh_pass = str(input("Password: ")).strip()
             
             if mesh_user and mesh_pass:
                 os.environ["MESH_USER"] = mesh_user

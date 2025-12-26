@@ -1062,9 +1062,6 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                 *Platform: **{cfg.platform.upper()}** | Device: **{DEVICE}** | Precision: **float32***
             """)
         with gr.Column(scale=2):
-            if cfg.platform == 'huggingface':
-                sync_btn = gr.Button("🔄 Sync GitHub", variant="secondary", size="sm")
-                sync_btn.click(fn=force_sync_github)
             gr.Markdown(f"<div style='text-align: right; color: #71717a; font-size: 12px;'>v1.0.1-optimized</div>")
 
     # --- 8.3. MAIN INTERFACE ---
