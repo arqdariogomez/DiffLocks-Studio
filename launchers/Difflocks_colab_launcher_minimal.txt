@@ -295,19 +295,32 @@ def install():
     for pkg in ["numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", "matplotlib", "matplotlib.libs", "gradio"]:
         pkg_path = Path(site_packages) / pkg
         if pkg_path.exists():
+            log(f"Removing {pkg_path}...", "info")
             shutil.rmtree(pkg_path, ignore_errors=True)
-        for dist in Path(site_packages).glob(f"{pkg}*.dist-info"):
-            shutil.rmtree(dist, ignore_errors=True)
-    log("Cleaned numpy/scipy/pandas/gradio", "success")
+        # Also clean the .dist-info and .egg-info
+        for dist in Path(site_packages).glob(f"{pkg}*"):
+            if dist.name.endswith((".dist-info", ".egg-info", ".so")):
+                shutil.rmtree(dist, ignore_errors=True) if dist.is_dir() else dist.unlink(missing_ok=True)
+    
+    # Also clean the user site packages just in case
+    import site
+    user_site = site.getusersitepackages()
+    if user_site and Path(user_site).exists():
+        shutil.rmtree(user_site, ignore_errors=True)
+
+    # Clean repo pycache
+    run_cmd(f"find {REPO_DIR} -name '__pycache__' -type d -exec rm -rf {{}} + 2>/dev/null || true")
+
+    log("Deep clean finished", "success")
 
     show_status(18, "🔥 Installing Core Stack (NumPy 1.26.4)...")
     # Install numpy first and separately to ensure it's the base
-    run_cmd("pip install --no-cache-dir numpy==1.26.4", timeout=120)
+    run_cmd("pip install --force-reinstall --no-cache-dir numpy==1.26.4", timeout=120)
     
     show_status(22, "🐼 Installing Pandas & Gradio...")
     # Then install the rest, ensuring they are compatible
     core_deps = ["pandas==2.2.2", "gradio==3.50.2", "matplotlib"]
-    run_cmd(f"pip install --no-cache-dir {' '.join(core_deps)}", timeout=300)
+    run_cmd(f"pip install --force-reinstall --no-cache-dir {' '.join(core_deps)}", timeout=300)
 
     # Force immediate reload and verification of NumPy/Pandas compatibility
     try:
