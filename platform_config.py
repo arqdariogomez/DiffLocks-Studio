@@ -38,11 +38,13 @@ class Config:
             repo_dir = work_dir / "DiffLocks-Studio"
             blender_exe = work_dir / "blender/blender"
             needs_share = True
-        elif any(k in os.environ for k in ['SPACE_ID', 'SPACE_REPO_NAME', 'HF_SPACE_ID']): 
+        elif any(k in os.environ for k in ['SPACE_ID', 'SPACE_REPO_NAME', 'HF_SPACE_ID', 'HF_SPACE_ID']): 
             platform = 'huggingface'
             # In HF Spaces, we want to ensure we are in /app if possible
             if Path("/app").exists():
                 work_dir = Path("/app")
+            elif Path("/home/user/app").exists():
+                work_dir = Path("/home/user/app")
             else:
                 work_dir = Path.cwd()
             repo_dir = work_dir

@@ -335,14 +335,21 @@ def download_checkpoints_hf():
         cfg.checkpoints_dir = nested_path
         return True
 
-    # If we are on HF but detection failed, try to force it if we are in /app
-    is_hf = cfg.platform == 'huggingface' or os.environ.get('SPACE_ID') or Path("/app").exists()
+    # If we are on HF or Docker but detection failed, try to force it if we are not on local
+    # We check for common cloud/container indicators
+    is_cloud = (
+        cfg.platform in ['huggingface', 'docker', 'kaggle', 'colab'] or 
+        'SPACE_ID' in os.environ or 
+        Path("/app").exists() or 
+        Path("/home/user/app").exists() or
+        os.environ.get("DOCKER_CONTAINER") == "true"
+    )
     
-    if not is_hf: 
+    if not is_cloud: 
         print(f"❌ Missing checkpoints! Search path: {cfg.checkpoints_dir}")
         return False
     
-    print(f"🔍 [HF SPACES] Missing checkpoints at {cfg.checkpoints_dir}. Attempting auto-download...")
+    print(f"🔍 [CLOUD DETECTED] Missing checkpoints at {cfg.checkpoints_dir}. Platform: {cfg.platform}. Attempting auto-download...")
     ckpt_dir = cfg.checkpoints_dir
     diffusion_dir = ckpt_dir / "difflocks_diffusion"
     vae_dir = ckpt_dir / "strand_vae"
@@ -1063,6 +1070,24 @@ dark_theme = gr.themes.Base(
 )
 
 with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) as demo:
+    # Checkpoint warning and download button
+    if not ckpt_files:
+        with gr.Container(variant="panel"):
+            gr.Markdown("### ⚠️ Missing Checkpoints")
+            gr.Markdown(f"Checkpoints not found in `{cfg.checkpoints_dir}`. If you are on HF Spaces, make sure `HF_TOKEN` is set.")
+            with gr.Row():
+                manual_download_btn = gr.Button("🚀 Download Checkpoints Now", variant="primary")
+                status_download = gr.Markdown("")
+            
+            def manual_download():
+                try:
+                    download_checkpoints_hf()
+                    return "✅ Download complete! Please refresh the page or click 'Generate' to try again."
+                except Exception as e:
+                    return f"❌ Download failed: {str(e)}"
+            
+            manual_download_btn.click(fn=manual_download, outputs=status_download)
+
     # --- 8.1. CPU WARNING BANNER ---
     if IS_CPU:
         with gr.Row(elem_classes="cpu-warning"):
