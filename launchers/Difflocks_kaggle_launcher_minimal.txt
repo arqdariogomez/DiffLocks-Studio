@@ -346,6 +346,10 @@ try:
     render_hud(100, "🚀 Starting Gradio Interface...", "success")
     log("Launching app.py logic...", "success")
     
+    # Limpiar consola antes de lanzar para una UI más limpia
+    from IPython.display import clear_output
+    clear_output(wait=True)
+    
     # Launch the demo (app.py handles the platform-specific launch_kwargs via __main__)
     # But since we are importing it, we call launch here with the right parameters for Kaggle
     demo.queue().launch(share=True, inline=True, height=1000)

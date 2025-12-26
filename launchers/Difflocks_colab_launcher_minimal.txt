@@ -264,18 +264,18 @@ def install():
     apply_device_fixes()
 
     show_status(12, "🧹 Cleaning environment...")
-    run_cmd("pip uninstall -y numpy scipy 2>/dev/null || true")
+    run_cmd("pip uninstall -y numpy scipy pandas matplotlib 2>/dev/null || true")
     run_cmd("pip cache purge 2>/dev/null || true")
 
     site_packages = subprocess.run([sys.executable, "-c", "import site; print(site.getsitepackages()[0])"],
                                    capture_output=True, text=True).stdout.strip()
-    for pkg in ["numpy", "numpy.libs", "scipy", "scipy.libs"]:
+    for pkg in ["numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", "matplotlib", "matplotlib.libs"]:
         pkg_path = Path(site_packages) / pkg
         if pkg_path.exists():
             shutil.rmtree(pkg_path, ignore_errors=True)
         for dist in Path(site_packages).glob(f"{pkg}*.dist-info"):
             shutil.rmtree(dist, ignore_errors=True)
-    log("Cleaned numpy/scipy", "success")
+    log("Cleaned numpy/scipy/pandas", "success")
 
     show_status(18, "🔥 Installing PyTorch 2.4.0...")
     torch_ver = get_pkg_version_subprocess("torch")
@@ -307,7 +307,7 @@ def install():
     show_status(50, "📚 Installing dependencies...")
     deps = ["gradio==3.50.2", "huggingface_hub", "accelerate", "safetensors", "einops",
             "dctorch", "torchdiffeq", "torchsde", "libigl", "trimesh", "mediapipe",
-            "plotly", "hjson", "jsonmerge", "Pillow", "opencv-contrib-python"]
+            "plotly", "hjson", "jsonmerge", "Pillow", "opencv-contrib-python", "pandas==2.2.2", "matplotlib"]
     run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} {' '.join(deps)}", timeout=300)
     log("Dependencies installed", "success")
 
@@ -443,6 +443,10 @@ def main():
         # Render final status
         show_status(100, "🚀 Starting Gradio Interface...", "success")
         log("Launching app.py logic...", "success")
+        
+        # Limpiar consola antes de lanzar para una UI más limpia
+        from IPython.display import clear_output
+        clear_output(wait=True)
         
         # Launch the demo (app.py handles the platform-specific launch_kwargs via __main__)
         # But since we are importing it, we call launch here with the right parameters for Colab
