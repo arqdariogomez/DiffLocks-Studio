@@ -56,15 +56,15 @@ IS_CPU = (DEVICE == "cpu")
 # --- 2. KAGGLE UI CONSTANTS ---
 PHASES = [
     ("init", "🚀 Initializing", 5, 0.00, 0.01),
-    ("1/5", "📸 Preprocessing image", 15, 0.01, 0.03),
-    ("2/5", "🔍 Extracting features", 45, 0.03, 0.08),
-    ("3/5", "✨ Running diffusion", 360, 0.08, 0.55), # GPU: 6 min | CPU: 16h
-    ("4/5", "🧶 Decoding strands", 180, 0.55, 0.75),
-    ("5/5", "🏁 Finalizing inference", 10, 0.75, 0.78),
-    ("preview_2d", "🎨 Creating 2D preview", 15, 0.78, 0.82),
-    ("preview_3d", "🎨 Creating Interactive 3D", 20, 0.82, 0.88),
-    ("obj_export", "📦 Exporting OBJ", 60, 0.88, 0.94),
-    ("blender", "🟧 Blender export", 120, 0.94, 1.00),
+    ("1/5", "📸 Preprocessing image", 10, 0.01, 0.03),
+    ("2/5", "🔍 Extracting features", 20, 0.03, 0.08),
+    ("3/5", "✨ Running diffusion", 180, 0.08, 0.55), # GPU: 3 min (optimized from 6)
+    ("4/5", "🧶 Decoding strands", 120, 0.55, 0.75), # GPU: 2 min (optimized from 3)
+    ("5/5", "🏁 Finalizing inference", 5, 0.75, 0.78),
+    ("preview_2d", "🎨 Creating 2D preview", 10, 0.78, 0.82),
+    ("preview_3d", "🎨 Creating Interactive 3D", 15, 0.82, 0.88),
+    ("obj_export", "📦 Exporting OBJ", 30, 0.88, 0.94),
+    ("blender", "🟧 Blender export", 60, 0.94, 1.00),
 ]
 
 # --- 3. LOG CAPTURE & PROGRESS TRACKER ---
