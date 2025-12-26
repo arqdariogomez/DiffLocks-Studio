@@ -389,7 +389,7 @@ if not vae_files:
 model = None
 
 def load_model():
-    global model
+    global model, ckpt_files, vae_files
     if model is not None: return
 
     if not ckpt_files or not vae_files:

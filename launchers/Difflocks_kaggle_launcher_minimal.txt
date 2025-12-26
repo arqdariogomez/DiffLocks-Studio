@@ -386,11 +386,17 @@ try:
     
     # Limpiar consola antes de lanzar para una UI más limpia
     from IPython.display import clear_output
+    import contextlib
+    import io
+
     clear_output(wait=True)
     
-    # Launch the demo (app.py handles the platform-specific launch_kwargs via __main__)
-    # But since we are importing it, we call launch here with the right parameters for Kaggle
-    demo.queue().launch(share=True, inline=True, height=1000)
+    # Launch the demo with output suppression to avoid showing Gradio boilerplate
+    # app.py handles the platform-specific launch_kwargs via __main__
+    # but since we are importing it, we call launch here with the right parameters for Kaggle
+    with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stderr(io.StringIO()):
+            demo.queue().launch(share=True, inline=True, height=1000, quiet=True)
     
 except Exception as e:
     render_hud(0, f"❌ Launch Error: {e}", "error")
