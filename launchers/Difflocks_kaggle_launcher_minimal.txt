@@ -1,0 +1,358 @@
+# 🚀 DiffLocks Studio - Kaggle Edition (V167)
+# ==================================================================================
+
+import os
+import sys
+import subprocess
+import shutil
+import time
+import contextlib
+import gc
+import zipfile
+import io
+import warnings
+import logging
+import builtins
+import re
+import threading
+import base64
+import numpy as np
+from pathlib import Path
+import ipywidgets as widgets
+from IPython.display import display, clear_output as ipy_clear_output
+
+# ==============================================================================
+# 0. SILENCING
+# ==============================================================================
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['GLOG_minloglevel'] = '3'
+os.environ['GRPC_VERBOSITY'] = 'ERROR'
+os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
+
+warnings.filterwarnings("ignore")
+for name in ["natten", "gradio", "httpx", "uvicorn", "matplotlib", "PIL", "mediapipe", "absl", "tensorflow"]:
+    logging.getLogger(name).setLevel(logging.CRITICAL)
+
+class StderrFilter:
+    def __init__(self):
+        self.original = sys.stderr
+        self.skip = ['natten', 'cuda_dnn', 'cuda_blas', 'cuDNN', 'cuBLAS', 'absl', 
+                    'STDERR', 'task_runner', 'egl_initialized', 'face_landmarker', 
+                    'xnnpack', 'TensorFlow', 'inference_feedback', 'WARNING:', 
+                    'INFO:', 'E0000', 'W0000', 'I0000']
+    def write(self, msg):
+        if not any(p in msg for p in self.skip):
+            self.original.write(msg)
+    def flush(self):
+        self.original.flush()
+    def restore(self):
+        sys.stderr = self.original
+
+stderr_filter = StderrFilter()
+sys.stderr = stderr_filter
+
+@contextlib.contextmanager
+def suppress_all():
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    null = open(os.devnull, 'w')
+    try:
+        sys.stdout = sys.stderr = null
+        yield
+    finally:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+        null.close()
+
+# ==============================================================================
+# 1. CONFIGURACIÓN
+# ==============================================================================
+if Path("/kaggle").exists():
+    WORK_DIR = Path("/kaggle/working")
+elif Path("/content").exists():
+    WORK_DIR = Path("/content")
+else:
+    WORK_DIR = Path.cwd()
+
+REPO_DIR = WORK_DIR / "DiffLocks-Studio"
+OUTPUT_DIR = WORK_DIR / "outputs"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+BLENDER_EXE = WORK_DIR / "blender/blender"
+MARKER_FILE = WORK_DIR / f".difflocks_v167_{'kaggle' if Path('/kaggle').exists() else 'colab' if Path('/content').exists() else 'local'}_complete"
+
+DATASET_PATHS = [
+    Path("/kaggle/input/env-libs-dataset-v2"),
+    Path("/kaggle/input/difflocks-env"),
+]
+LOCAL_DATASET = next((p for p in DATASET_PATHS if p.exists()), None)
+HAS_LOCAL_WHEELS = LOCAL_DATASET and (LOCAL_DATASET / "wheels").exists()
+EXTERNAL_CKPTS = Path("/kaggle/input/difflocks/checkpoints")
+
+# ==============================================================================
+# CONFIGURACIÓN DE FASES (BASE GPU)
+# ==============================================================================
+# Cada fase: (id, nombre, tiempo_estimado_segundos_GPU, porcentaje_inicio, porcentaje_fin)
+PHASES = [
+    ("init", "🚀 Initializing", 5, 0.00, 0.01),
+    ("1/5", "📸 Preprocessing image", 15, 0.01, 0.03),
+    ("2/5", "🔍 Extracting features", 45, 0.03, 0.08),
+    ("3/5", "✨ Running diffusion", 360, 0.08, 0.55), # GPU: 6 min | CPU: Will be 16h
+    ("4/5", "🧶 Decoding strands", 180, 0.55, 0.75),
+    ("5/5", "🏁 Finalizing inference", 10, 0.75, 0.78),
+    ("preview_2d", "🎨 Creating 2D preview", 15, 0.78, 0.82),
+    ("preview_3d", "🎨 Creating Interactive 3D", 20, 0.82, 0.86),
+    ("obj_export", "📦 Exporting OBJ", 60, 0.86, 0.92),
+    ("blender", "🟧 Blender export", 120, 0.92, 0.97),
+    ("zip", "📦 Creating ZIP", 15, 0.97, 1.00),
+]
+
+# ==============================================================================
+# 2. AUTO-REPARACIÓN
+# ==============================================================================
+MODULE_TO_PACKAGE = {
+    'igl': 'libigl', 'cv2': 'opencv-contrib-python', 'PIL': 'Pillow',
+    'dctorch': 'dctorch', 'accelerate': 'accelerate', 'torchdiffeq': 'torchdiffeq',
+    'torchsde': 'torchsde', 'trampoline': 'trampoline', 'einops': 'einops',
+    'safetensors': 'safetensors', 'scipy': 'scipy', 'trimesh': 'trimesh',
+    'mediapipe': 'mediapipe', 'plotly': 'plotly', 'hjson': 'hjson',
+    'jsonmerge': 'jsonmerge',
+    'k_diffusion': None, 'inference': None, 'data_loader': None,
+}
+
+def extract_missing_module(error_msg):
+    match = re.search(r"No module named ['\"]([^'\"]+)['\"]", str(error_msg))
+    return match.group(1).split('.')[0] if match else None
+
+def install_package(package, log_func):
+    log_func(f"🔧 Installing: {package}")
+    cmd = f"pip install --quiet {package}"
+    if HAS_LOCAL_WHEELS:
+        cmd += f" --find-links {LOCAL_DATASET / 'wheels'}"
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+    return result.returncode == 0
+
+def try_import_with_repair(import_func, log_func, max_attempts=15):
+    attempts, installed = 0, []
+    while attempts < max_attempts:
+        try:
+            return import_func()
+        except ModuleNotFoundError as e:
+            module = extract_missing_module(str(e))
+            if not module or module in installed:
+                raise
+            package = MODULE_TO_PACKAGE.get(module, module)
+            if package and install_package(package, log_func):
+                installed.append(module)
+                attempts += 1
+            else:
+                raise
+        except ImportError as e:
+            module = extract_missing_module(str(e))
+            if module and module not in installed:
+                package = MODULE_TO_PACKAGE.get(module, module)
+                if package and install_package(package, log_func):
+                    installed.append(module)
+                    attempts += 1
+                    continue
+            raise
+    raise Exception("Max attempts reached")
+
+# ==============================================================================
+# 3. UI DASHBOARD
+# ==============================================================================
+main_output = widgets.Output()
+display(main_output)
+
+install_log_lines = []
+
+def render_hud(progress, message, status="running"):
+    colors = {"running": "#818cf8", "success": "#34d399", "error": "#f87171", "warning": "#fbbf24"}
+    color = colors.get(status, "#818cf8")
+    
+    logs_html = ""
+    if install_log_lines:
+        logs_content = "<br>".join(install_log_lines[-15:])
+        logs_html = f"""
+        <details style="margin-top: 10px;" open>
+            <summary style="cursor: pointer; color: #a1a1aa; font-size: 12px;">📋 Logs ({len(install_log_lines)})</summary>
+            <div style="background: #27272a; padding: 10px; border-radius: 5px; margin-top: 5px;
+                max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 11px; color: #d4d4d8; border: 1px solid #3f3f46;">
+                {logs_content}
+            </div>
+        </details>
+        """
+    
+    html = f"""
+    <div style="background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
+        border-left: 4px solid {color}; border-radius: 8px; padding: 20px; margin-bottom: 10px; border: 1px solid #3f3f46;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 24px; font-weight: 700; color: #fafafa;">💇‍♀️ DiffLocks Studio</span>
+            <span style="background: {color}33; color: {color}; padding: 4px 12px;
+                border-radius: 20px; font-size: 12px; font-weight: 600;">{progress}%</span>
+        </div>
+        <div style="color: #e4e4e7; font-size: 16px; margin-bottom: 15px;">{message}</div>
+        <div style="background: #3f3f46; height: 6px; border-radius: 3px; overflow: hidden;">
+            <div style="width: {progress}%; height: 100%; background: linear-gradient(90deg, {color}, {color}cc); transition: width 0.3s ease;"></div>
+        </div>
+        {logs_html}
+    </div>
+    """
+    
+    with main_output:
+        main_output.clear_output(wait=True)
+        display(widgets.HTML(html))
+
+def log(msg, level="info"):
+    icons = {"info": "ℹ️", "success": "✅", "error": "❌", "warning": "⚠️"}
+    ts = time.strftime('%H:%M:%S')
+    install_log_lines.append(f"{icons.get(level, 'ℹ️')} [{ts}] {msg}")
+
+# ==============================================================================
+# 4. INSTALACIÓN
+# ==============================================================================
+
+def run_cmd(cmd, desc=""):
+    if desc:
+        log(desc)
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
+        return result.returncode == 0
+    except:
+        return False
+
+def install_environment():
+    if MARKER_FILE.exists() and REPO_DIR.exists() and BLENDER_EXE.exists():
+        render_hud(85, "🔄 Restoring environment...", "success")
+        log("Previous installation found", "success")
+        return True
+    
+    try:
+        render_hud(5, "📦 System dependencies...")
+        run_cmd("apt-get update -qq && apt-get install -y -qq xz-utils libxrender1 libsm6 libgl1-mesa-glx > /dev/null 2>&1")
+        log("System packages ready", "success")
+        
+        render_hud(10, "📥 Cloning repository...")
+        if REPO_DIR.exists():
+            shutil.rmtree(REPO_DIR)
+        run_cmd(f"git clone --depth 1 https://github.com/arqdariogomez/DiffLocks-Studio.git {REPO_DIR}")
+        log("Repository cloned", "success")
+        
+        render_hud(20, "🧹 Cleaning incompatible packages...")
+        run_cmd("pip uninstall -y torch torchvision torchaudio 2>/dev/null || true")
+        log("Cleaned old packages", "success")
+        
+        render_hud(30, "⚡ Installing PyTorch 2.4.0...")
+        if HAS_LOCAL_WHEELS:
+            wheels_path = LOCAL_DATASET / "wheels"
+            run_cmd(f"pip install --quiet --no-cache-dir torch==2.4.0 torchvision==0.19.0 --find-links {wheels_path}")
+        else:
+            run_cmd("pip install --quiet --no-cache-dir torch==2.4.0 torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cu121")
+        log("PyTorch installed", "success")
+        
+        render_hud(45, "🧩 Installing NATTEN...")
+        if HAS_LOCAL_WHEELS:
+            run_cmd(f"pip install --quiet natten==0.17.1+torch240cu121 --find-links {LOCAL_DATASET / 'wheels'} --no-deps")
+        else:
+            run_cmd("pip install --quiet natten==0.17.1+torch240cu121 -f https://shi-labs.com/natten/wheels/")
+        log("NATTEN installed", "success")
+        
+        render_hud(55, "📚 Installing dependencies...")
+        run_cmd("pip install --quiet 'numpy<2.0.0' gradio==3.50.2")
+        
+        deps = ["dctorch", "accelerate", "torchdiffeq", "torchsde", "trampoline", 
+                "einops", "safetensors", "libigl", "trimesh", "scipy",
+                "opencv-contrib-python", "mediapipe", "plotly", "hjson", "jsonmerge"]
+        for dep in deps:
+            run_cmd(f"pip install --quiet {dep}")
+        
+        req_file = REPO_DIR / "requirements.txt"
+        if req_file.exists():
+            run_cmd(f"pip install --quiet -r {req_file}")
+        
+        log("Dependencies installed", "success")
+        
+        render_hud(70, "🎨 Setting up Blender...")
+        blender_dir = WORK_DIR / "blender"
+        blender_dir.mkdir(exist_ok=True)
+        
+        if not BLENDER_EXE.exists():
+            local_blender = next(iter(LOCAL_DATASET.glob("**/blender*.tar.xz")), None) if LOCAL_DATASET else None
+            if local_blender:
+                run_cmd(f"tar -xf {local_blender} -C {blender_dir} --strip-components=1")
+            else:
+                run_cmd("wget -q -O /tmp/blender.tar.xz 'https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz'")
+                run_cmd(f"tar -xf /tmp/blender.tar.xz -C {blender_dir} --strip-components=1")
+        log("Blender ready", "success")
+        
+        render_hud(80, "🧠 Setting up checkpoints...")
+        ckpt_dir = REPO_DIR / "checkpoints"
+        
+        if EXTERNAL_CKPTS.exists() and EXTERNAL_CKPTS.is_dir():
+            if ckpt_dir.exists() and not ckpt_dir.is_symlink():
+                shutil.rmtree(ckpt_dir)
+            if not ckpt_dir.exists():
+                ckpt_dir.symlink_to(EXTERNAL_CKPTS)
+            log("Checkpoints linked", "success")
+        else:
+            log(f"External checkpoints not found at {EXTERNAL_CKPTS}", "warning")
+            download_script = REPO_DIR / "download_checkpoints.py"
+            if download_script.exists() and (not ckpt_dir.exists() or not list(ckpt_dir.rglob("*.pth"))):
+                log("Downloading checkpoints...", "info")
+                run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py")
+        
+        task_path = REPO_DIR / "inference/assets/face_landmarker_v2_with_blendshapes.task"
+        task_path.parent.mkdir(parents=True, exist_ok=True)
+        if not task_path.exists():
+            local_task = next(iter(LOCAL_DATASET.glob("**/face_landmarker*.task")), None) if LOCAL_DATASET else None
+            if local_task:
+                shutil.copy(local_task, task_path)
+            else:
+                run_cmd(f"wget -q -O {task_path} https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task")
+        log("Assets ready", "success")
+        
+        MARKER_FILE.write_text(f"v167 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        render_hud(90, "✅ Installation complete!", "success")
+        return True
+        
+    except Exception as e:
+        render_hud(0, f"❌ Error: {e}", "error")
+        import traceback
+        log(traceback.format_exc(), "error")
+        raise
+
+# ==============================================================================
+# 5. RUN APP
+# ==============================================================================
+import sys
+import os
+from pathlib import Path
+
+# Ensure environment is ready
+if not install_environment():
+    raise Exception("Installation failed")
+
+# Add REPO_DIR to sys.path
+if str(REPO_DIR) not in sys.path:
+    sys.path.insert(0, str(REPO_DIR))
+
+# Import the demo from app.py
+try:
+    os.chdir(REPO_DIR)
+    # Clear cache to avoid import issues
+    for m in list(sys.modules.keys()):
+        if m.startswith('app') or m.startswith('inference'):
+            del sys.modules[m]
+            
+    from app import demo
+    
+    # Render final status
+    render_hud(100, "🚀 Starting Gradio Interface...", "success")
+    log("Launching app.py logic...", "success")
+    
+    # Launch the demo (app.py handles the platform-specific launch_kwargs via __main__)
+    # But since we are importing it, we call launch here with the right parameters for Kaggle
+    demo.queue().launch(share=True, inline=True, height=1000)
+    
+except Exception as e:
+    render_hud(0, f"❌ Launch Error: {e}", "error")
+    import traceback
+    log(traceback.format_exc(), "error")
+    raise
