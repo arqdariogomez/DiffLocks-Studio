@@ -28,7 +28,7 @@ High-fidelity 3D hair generation from a single image. This repository is an opti
 | **Pinokio** | One-click local install | ⚡ Fast | Yes (NVIDIA) | [Install via Pinokio](https://pinokio.computer) |
 | **Docker** | Local power users | ⚡⚡ Very Fast | Yes (NVIDIA) | [See Instructions Below](#-docker-deployment-easiest-for-local) |
 | **Kaggle** | Free GPU (30h/week) | 🐢 Slow | No (Cloud) | [Open in Kaggle](https://www.kaggle.com/code/rubndarogmezhurtado/difflocks-github-launcher-minimal) |
-| **Colab** | Free/Paid GPU | 🐢 Slow | No (Cloud) | [Open in Colab](https://colab.research.google.com/github/arqdariogomez/DiffLocks-Studio/blob/main/Difflocks_v6d.ipynb) |
+| **Colab** | Free/Paid GPU | 🐢 Slow | No (Cloud) | [Open in Colab](https://colab.research.google.com/drive/1ibsdkyL0EVlZ40XUL97XiY2GgV6VONI2) |
 
 ---
 
