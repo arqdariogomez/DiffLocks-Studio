@@ -224,6 +224,21 @@ def log(msg, level="info"):
     ts = time.strftime('%H:%M:%S')
     install_log_lines.append(f"{icons.get(level, 'ℹ️')} [{ts}] {msg}")
 
+def show_gradio_frame(url):
+    with main_output:
+        main_output.clear_output(wait=True)
+        display(HTML(f'''
+            <div style="background:linear-gradient(135deg,#18181b,#27272a);border:1px solid #34d399;border-radius:12px;padding:15px;margin-bottom:10px">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                    <span style="font-size:28px">✅</span>
+                    <span style="font-size:20px;font-weight:700;color:#34d399">DiffLocks Studio Ready!</span>
+                </div>
+                <p style="color:#a1a1aa;margin:5px 0">Public URL: <a href="{url}" target="_blank" style="color:#818cf8">{url}</a></p>
+                <p style="color:#71717a;font-size:12px">If the iframe doesn't load, click the link above.</p>
+            </div>
+        '''))
+        display(IFrame(src=url, width="100%", height=1000))
+
 # ==============================================================================
 # 4. INSTALACIÓN
 # ==============================================================================
@@ -395,10 +410,26 @@ try:
     # app.py handles the platform-specific launch_kwargs via __main__
     # but since we are importing it, we call launch here with the right parameters for Kaggle
     try:
-        # We don't suppress stdout here initially to see if it starts
-        # with contextlib.redirect_stdout(io.StringIO()):
-        #     with contextlib.redirect_stderr(io.StringIO()):
-        demo.queue().launch(share=True, inline=True, height=1000, quiet=False)
+        # We suppress stdout/stderr to hide the Gradio boilerplate (update messages, local URLs, etc.)
+        # but we capture the share_url to show it in our own UI if needed.
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            with contextlib.redirect_stderr(f):
+                # In Gradio 3.x, launch() returns (app, local_url, share_url)
+                _, _, share_url = demo.queue().launch(
+                    share=True, 
+                    inline=True, 
+                    height=1000, 
+                    quiet=True, 
+                    show_api=False,
+                    show_tips=False
+                )
+        
+        # If we got a share_url, we can log it quietly in our HUD or just let the iframe handle it
+        if share_url:
+            log(f"Gradio Public URL: {share_url}", "success")
+            show_gradio_frame(share_url)
+            
     except Exception as launch_err:
         log(f"Gradio Launch Error: {launch_err}", "error")
         raise launch_err

@@ -521,10 +521,26 @@ def main():
         
         # We wrap the launch in a way that if it fails early, we see the error
         try:
-            # We don't suppress stdout here initially to see if it starts
-            # with contextlib.redirect_stdout(io.StringIO()):
-            #     with contextlib.redirect_stderr(io.StringIO()):
-            demo.queue().launch(share=True, inline=True, height=1000, quiet=False)
+            # We suppress stdout/stderr to hide the Gradio boilerplate
+            f = io.StringIO()
+            with contextlib.redirect_stdout(f):
+                with contextlib.redirect_stderr(f):
+                    # In Gradio 3.x, launch() returns (app, local_url, share_url)
+                    _, _, share_url = demo.queue().launch(
+                        share=True, 
+                        inline=True, 
+                        height=1000, 
+                        quiet=True,
+                        show_api=False,
+                        show_tips=False
+                    )
+            
+            if share_url:
+                log(f"Gradio Public URL: {share_url}", "success")
+                # Show the beautiful URL frame if we are in Colab
+                if share_url and 'COLAB_GPU' in os.environ:
+                    show_gradio_frame(share_url)
+                    
         except Exception as launch_err:
             log(f"Gradio Launch Error: {launch_err}", "error")
             raise launch_err
