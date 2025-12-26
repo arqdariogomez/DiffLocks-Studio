@@ -51,10 +51,11 @@ class Config:
             
             # Persistent storage check for HF Spaces
             # Check /data (Persistent Storage) or /home/user/app/data
+            data_dir = None
             potential_data_dirs = [Path("/data"), Path("./data"), Path("/home/user/app/data")]
             for d in potential_data_dirs:
                 if d.exists() and os.access(str(d), os.W_OK):
-                    # We found a writable data dir
+                    data_dir = d
                     break
         elif Path("/app").exists() and os.environ.get("DOCKER_CONTAINER", "false") == "true":
             platform = 'docker'
@@ -80,8 +81,16 @@ class Config:
         configs_dir = repo_dir / "configs"
 
         # HF Spaces persistent storage override
-        if platform == 'huggingface' and Path("/data").exists() and os.access("/data", os.W_OK):
-            checkpoints_dir = Path("/data/checkpoints")
+        if platform == 'huggingface':
+            # Priority 1: /data/checkpoints (Official persistent storage)
+            if Path("/data").exists() and os.access("/data", os.W_OK):
+                checkpoints_dir = Path("/data/checkpoints")
+            # Priority 2: local ./checkpoints (If user uploaded them or downloaded them)
+            elif (repo_dir / "checkpoints").exists():
+                checkpoints_dir = repo_dir / "checkpoints"
+            # Priority 3: data_dir / checkpoints (Any other detected persistent storage)
+            elif 'data_dir' in locals() and data_dir and data_dir.exists():
+                checkpoints_dir = data_dir / "checkpoints"
 
         # Platform-specific checkpoint overrides
         if platform == 'kaggle':
