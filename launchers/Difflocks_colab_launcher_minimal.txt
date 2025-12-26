@@ -285,22 +285,31 @@ def install():
 
     show_status(12, "🧹 Cleaning environment...")
     # Explicitly uninstall to avoid binary conflicts
-    run_cmd("pip uninstall -y numpy scipy pandas matplotlib gradio natten 2>/dev/null || true")
+    # ADDED: scikit-image and other potential numpy consumers
+    run_cmd("pip uninstall -y numpy scipy pandas matplotlib gradio natten scikit-image opencv-python 2>/dev/null || true")
     run_cmd("pip cache purge 2>/dev/null || true")
 
     site_packages = subprocess.run([sys.executable, "-c", "import site; print(site.getsitepackages()[0])"],
                                    capture_output=True, text=True).stdout.strip()
+    
     # Deep clean of package directories to remove any leftover .so files
-    # ADDED: pandas and pandas.libs to deep clean
-    for pkg in ["numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", "matplotlib", "matplotlib.libs", "gradio"]:
+    # ADDED: More extensive list of packages that often cause binary mismatches
+    bad_pkgs = [
+        "numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", 
+        "matplotlib", "matplotlib.libs", "gradio", "PIL", "cv2", "skimage"
+    ]
+    for pkg in bad_pkgs:
         pkg_path = Path(site_packages) / pkg
         if pkg_path.exists():
             log(f"Removing {pkg_path}...", "info")
             shutil.rmtree(pkg_path, ignore_errors=True)
-        # Also clean the .dist-info and .egg-info
+        # Also clean the .dist-info and .egg-info and .so files in the root site-packages
         for dist in Path(site_packages).glob(f"{pkg}*"):
-            if dist.name.endswith((".dist-info", ".egg-info", ".so")):
-                shutil.rmtree(dist, ignore_errors=True) if dist.is_dir() else dist.unlink(missing_ok=True)
+            if dist.name.endswith((".dist-info", ".egg-info", ".so", ".pth")):
+                if dist.is_dir():
+                    shutil.rmtree(dist, ignore_errors=True)
+                else:
+                    dist.unlink(missing_ok=True)
     
     # Also clean the user site packages just in case
     import site
@@ -315,11 +324,13 @@ def install():
 
     show_status(18, "🔥 Installing Core Stack (NumPy 1.26.4)...")
     # Install numpy first and separately to ensure it's the base
+    # We use --force-reinstall and --no-cache-dir to be absolutely sure
     run_cmd("pip install --force-reinstall --no-cache-dir numpy==1.26.4", timeout=120)
     
     show_status(22, "🐼 Installing Pandas & Gradio...")
-    # Then install the rest, ensuring they are compatible
-    core_deps = ["pandas==2.2.2", "gradio==3.50.2", "matplotlib"]
+    # Then install the rest, ensuring they are compatible with NumPy 1.26.4
+    # We install pandas and others in one go to let pip resolve shared deps
+    core_deps = ["pandas==2.2.2", "gradio==3.50.2", "matplotlib", "scikit-image", "opencv-python"]
     run_cmd(f"pip install --force-reinstall --no-cache-dir {' '.join(core_deps)}", timeout=300)
 
     # Force immediate reload and verification of NumPy/Pandas compatibility
