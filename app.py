@@ -411,27 +411,28 @@ def download_checkpoints_hf():
             ignore_patterns=["*.md", ".git*"]
         )
         
-    # After download, check if we need to update checkpoints_dir
-    # We look for where 'difflocks_diffusion' actually ended up
-    possible_locations = [
-        cfg.repo_dir,
-        cfg.repo_dir / "checkpoints",
-        cfg.repo_dir / "checkpoints" / "checkpoints", # Handle double nesting if it happened
-        Path("/data"), # HF Persistent storage
-        Path("/data/checkpoints")
-    ]
-    
-    for loc in possible_locations:
-        if (loc / "difflocks_diffusion").exists() and list((loc / "difflocks_diffusion").glob("scalp_*.pth")):
-            cfg.checkpoints_dir = loc
-            print(f"✅ [HF SPACES] Found checkpoints in: {cfg.checkpoints_dir}")
-            break
+        # After download, check if we need to update checkpoints_dir
+        # We look for where 'difflocks_diffusion' actually ended up
+        possible_locations = [
+            cfg.repo_dir,
+            cfg.repo_dir / "checkpoints",
+            cfg.repo_dir / "checkpoints" / "checkpoints", # Handle double nesting if it happened
+            Path("/data"), # HF Persistent storage
+            Path("/data/checkpoints")
+        ]
+        
+        for loc in possible_locations:
+            if (loc / "difflocks_diffusion").exists() and list((loc / "difflocks_diffusion").glob("scalp_*.pth")):
+                cfg.checkpoints_dir = loc
+                print(f"✅ [HF SPACES] Found checkpoints in: {cfg.checkpoints_dir}")
+                break
 
-    print("✅ [HF SPACES] All assets downloaded successfully.")
-    return True
+        print("✅ [HF SPACES] All assets downloaded successfully.")
+        return True
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
         print("💡 Ensure MESH_USER/MESH_PASS or HF_TOKEN are set in Space Secrets.")
+        return False
 
 # Run download check before initializing file lists
 download_checkpoints_hf()
