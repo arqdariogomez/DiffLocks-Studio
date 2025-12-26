@@ -1,0 +1,240 @@
+14:43:50 - Starting MVP interface...
+14:43:50 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:44:38 - Starting MVP interface...
+14:44:38 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:45:38 - Starting MVP interface...
+14:45:38 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:46:24 - Starting MVP interface...
+14:46:24 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:47:12 - Starting MVP interface...
+14:47:12 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:49:25 - Starting MVP interface...
+14:49:25 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:52:52 - Starting MVP interface...
+14:52:52 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:53:11 - 🔄 reload_3d() triggered
+14:53:11 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+14:53:11 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+14:53:12 - [3D LOG] ✅ Interactive 3D: Plot created with 33297 points
+14:53:50 - 🔄 reload_3d() triggered
+14:53:50 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+14:53:50 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+14:53:51 - [3D LOG] ✅ Interactive 3D: Plot created with 33297 points
+14:55:28 - Starting MVP interface...
+14:55:28 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:56:00 - Starting MVP interface...
+14:56:00 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:56:57 - Starting MVP interface...
+14:56:57 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+14:57:06 - 🔄 reload_3d() triggered
+14:57:07 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+14:57:07 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+14:57:07 - [3D LOG] 📊 Hair Ranges - X: -0.114 to 0.114, Y: -0.142 to 0.108, Z: 0.181 to 0.422
+14:57:08 - [3D LOG] ✅ Interactive 3D: Plot created with 33297 points
+14:57:13 - 🔄 reload_3d() triggered
+14:57:13 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+14:57:13 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+14:57:13 - [3D LOG] 📊 Hair Ranges - X: -0.114 to 0.114, Y: -0.142 to 0.108, Z: 0.181 to 0.422
+14:57:14 - [3D LOG] ✅ Interactive 3D: Plot created with 33297 points
+14:59:58 - Starting MVP interface...
+14:59:58 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:00:09 - 🔄 reload_3d() triggered
+15:00:09 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:00:09 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:00:11 - [3D LOG] ❌ Error in Interactive 3D: name 'x_plot' is not defined
+15:00:11 - [3D LOG] Traceback (most recent call last):
+  File "C:\pinokio\api\DiffLocks-Studio\app.py", line 503, in generate_preview_3d
+    log_capture.add_log(f"✅ Interactive 3D: Plot created with {len(x_plot)} points")
+NameError: name 'x_plot' is not defined
+
+15:00:12 - 🔄 reload_3d() triggered
+15:00:12 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:00:12 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:00:12 - [3D LOG] ❌ Error in Interactive 3D: name 'x_plot' is not defined
+15:00:12 - [3D LOG] Traceback (most recent call last):
+  File "C:\pinokio\api\DiffLocks-Studio\app.py", line 503, in generate_preview_3d
+    log_capture.add_log(f"✅ Interactive 3D: Plot created with {len(x_plot)} points")
+NameError: name 'x_plot' is not defined
+
+15:00:15 - 🔄 reload_3d() triggered
+15:00:15 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:00:15 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:00:15 - [3D LOG] ❌ Error in Interactive 3D: name 'x_plot' is not defined
+15:00:15 - [3D LOG] Traceback (most recent call last):
+  File "C:\pinokio\api\DiffLocks-Studio\app.py", line 503, in generate_preview_3d
+    log_capture.add_log(f"✅ Interactive 3D: Plot created with {len(x_plot)} points")
+NameError: name 'x_plot' is not defined
+
+15:00:24 - 🔄 reload_3d() triggered
+15:00:24 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:00:24 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:00:24 - [3D LOG] ❌ Error in Interactive 3D: name 'x_plot' is not defined
+15:00:24 - [3D LOG] Traceback (most recent call last):
+  File "C:\pinokio\api\DiffLocks-Studio\app.py", line 503, in generate_preview_3d
+    log_capture.add_log(f"✅ Interactive 3D: Plot created with {len(x_plot)} points")
+NameError: name 'x_plot' is not defined
+
+15:01:08 - Starting MVP interface...
+15:01:08 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:01:21 - 🔄 reload_3d() triggered
+15:01:21 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:01:21 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:01:22 - [3D LOG] ✅ Interactive 3D: Plot created with 52 traces
+15:02:29 - Starting MVP interface...
+15:02:29 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:02:46 - 🔄 reload_3d() triggered
+15:02:46 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:02:46 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:02:47 - [3D LOG] ✅ Interactive 3D: Plot created with 102 traces
+15:03:03 - 🔄 reload_3d() triggered
+15:03:03 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:03:03 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:03:03 - [3D LOG] ✅ Interactive 3D: Plot created with 102 traces
+15:03:56 - Starting MVP interface...
+15:03:56 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:04:48 - Starting MVP interface...
+15:04:48 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:05:24 - 🔄 reload_3d() triggered
+15:05:24 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:05:24 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:05:24 - [3D LOG] ✅ Plotly: Created 23 traces. Data types: <class 'numpy.ndarray'>
+15:07:20 - Starting MVP interface...
+15:07:20 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:07:28 - 🔄 reload_3d() triggered
+15:07:28 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:07:28 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:07:30 - [3D LOG] ✅ Interactive 3D: Plot created with 33297 points
+15:08:57 - Starting MVP interface...
+15:08:57 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:09:06 - 🔄 reload_3d() triggered
+15:09:06 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:09:06 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:09:08 - [3D LOG] ✅ Hybrid 3D: Plot created with 102 groups
+15:09:15 - 🔄 reload_3d() triggered
+15:09:15 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:09:15 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:09:15 - [3D LOG] ✅ Hybrid 3D: Plot created with 102 groups
+15:10:39 - Starting MVP interface...
+15:10:39 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:11:17 - Starting MVP interface...
+15:11:17 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:11:22 - 🔄 reload_3d() triggered
+15:11:22 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:11:22 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:11:22 - [3D LOG] 📍 Hair Center: X=0.0026, Y=-0.0455, Z=0.3097
+15:11:22 - [3D LOG] 📍 Data Range: X(-0.1143 to 0.1140), Y(-0.1417 to 0.1082), Z(0.1809 to 0.4216)
+15:11:24 - [3D LOG] ✅ Hybrid 3D: Plot created with 104 groups
+15:12:25 - 🔄 reload_3d() triggered
+15:12:25 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:12:25 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:12:25 - [3D LOG] 📍 Hair Center: X=0.0026, Y=-0.0455, Z=0.3097
+15:12:25 - [3D LOG] 📍 Data Range: X(-0.1143 to 0.1140), Y(-0.1417 to 0.1082), Z(0.1809 to 0.4216)
+15:12:26 - [3D LOG] ✅ Hybrid 3D: Plot created with 104 groups
+15:12:53 - Starting MVP interface...
+15:12:53 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:12:57 - 🔄 reload_3d() triggered
+15:12:57 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:12:57 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:12:57 - [3D LOG] 📍 Center: X=0.003, Y=-0.046, Z=0.310
+15:12:58 - [3D LOG] ✅ Hybrid 3D: Plot created with 55 groups
+15:14:45 - Starting MVP interface...
+15:14:45 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:14:54 - 🔄 reload_3d() triggered
+15:14:54 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:14:54 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:14:57 - [3D LOG] ✅ Hybrid 3D: Plot created with 42 groups
+15:16:54 - Starting MVP interface...
+15:16:54 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:17:04 - 🔄 reload_3d() triggered
+15:17:04 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:17:04 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:17:06 - [3D LOG] ✅ Hybrid 3D: Plot created with 42 groups
+15:19:24 - Starting MVP interface...
+15:19:24 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:19:36 - 🔄 reload_3d() triggered
+15:19:36 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:19:36 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:19:38 - [3D LOG] ✅ Hybrid 3D: Plot created with 42 groups
+15:21:49 - Starting MVP interface...
+15:21:49 - 🔍 Testing with: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands_preview.npz
+15:22:02 - 🔄 reload_3d() triggered
+15:22:02 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands_preview.npz...
+15:22:02 - [3D LOG] 🎨 Interactive 3D: Loaded 1009 strands, 32 points
+15:22:02 - [3D LOG] 🎨 Interactive 3D: Rendering 505 strands with 32 points each
+15:22:04 - [3D LOG] ✅ Hybrid 3D: Plot created with 26 groups
+15:23:46 - Starting MVP interface...
+15:25:06 - Starting MVP interface...
+15:25:56 - Starting MVP interface...
+15:26:15 - Starting MVP interface...
+15:26:40 - Starting MVP interface...
+15:27:57 - Starting MVP interface...
+15:30:12 - Starting MVP interface...
+15:30:12 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:30:19 - 🔄 reload_3d() triggered
+15:30:19 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:30:22 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:30:22 - [3D LOG] 🎨 Interactive 3D: Rendering 502 strands with 256 points each
+15:30:28 - [3D LOG] ✅ Hybrid 3D: Plot created with 34 groups
+15:33:16 - Starting MVP interface...
+15:33:16 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:34:07 - 🔄 reload_3d() triggered
+15:34:07 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:34:09 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:34:09 - [3D LOG] 🎨 Interactive 3D: Rendering 95829 strands (100%) with 256 points each
+15:36:31 - Starting MVP interface...
+15:36:31 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:36:34 - 🔄 reload_3d() triggered
+15:36:34 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:36:36 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:36:36 - [3D LOG] 🎨 Interactive 3D: Rendering 2039 strands (Optimized 100%) with 256 points each
+15:36:58 - [3D LOG] ✅ Hybrid 3D: Plot created with 21 groups
+15:38:45 - Starting MVP interface...
+15:38:45 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:38:54 - 🔄 reload_3d() triggered
+15:38:54 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:38:56 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:38:56 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 256 points each
+15:39:07 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups
+15:42:07 - Starting MVP interface...
+15:42:07 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:42:10 - 🔄 reload_3d() triggered
+15:42:10 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:42:12 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:42:12 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 26 points each
+15:42:14 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups
+15:43:38 - Starting MVP interface...
+15:43:38 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:43:40 - 🔄 reload_3d() triggered
+15:43:40 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:43:42 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:43:42 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 26 points each
+15:43:44 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups
+15:45:39 - Starting MVP interface...
+15:45:39 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:45:45 - 🔄 reload_3d() triggered
+15:45:45 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:45:48 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:45:48 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 26 points each
+15:45:50 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups
+15:45:58 - 🔄 reload_3d() triggered
+15:45:58 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:46:00 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:46:00 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 26 points each
+15:46:01 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups
+15:47:10 - Starting MVP interface...
+15:47:10 - 🚀 Using FULL NPZ: C:\pinokio\api\DiffLocks-Studio\studio_outputs\job_1766693409\difflocks_output_strands.npz
+15:47:12 - 🔄 reload_3d() triggered
+15:47:12 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:47:14 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:47:14 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 26 points each
+15:47:16 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups
+15:48:19 - 🔄 reload_3d() triggered
+15:48:19 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:48:22 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:48:22 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 26 points each
+15:48:23 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups
+15:49:06 - 🔄 reload_3d() triggered
+15:49:06 - [3D LOG] 🎨 Interactive 3D: Loading difflocks_output_strands.npz...
+15:49:08 - [3D LOG] 🎨 Interactive 3D: Loaded 95829 strands, 256 points
+15:49:08 - [3D LOG] 🎨 Interactive 3D: Rendering 1009 strands with 26 points each
+15:49:10 - [3D LOG] ✅ Hybrid 3D: Plot created with 5 groups

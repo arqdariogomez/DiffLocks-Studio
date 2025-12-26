@@ -257,7 +257,7 @@ def render_image_html(image_path, title="2D Preview"):
         img_data = base64.b64encode(f.read()).decode('utf-8')
     return f'''
     <div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px; padding: 12px; text-align: center; display: flex; justify-content: center; align-items: center;">
-        <img src="data:image/png;base64,{img_data}" style="width: 66%; height: auto; border-radius: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);" alt="{title}"/>
+        <img src="data:image/png;base64,{img_data}" style="width: 66%; height: auto; border-radius: 6px;" alt="{title}"/>
     </div>
     '''
 
@@ -662,7 +662,6 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
             preview_2d: render_image_html(None),
             download_file: [],
             result_group: gr.update(visible=False),
-            plot_3d_accordion: gr.update(visible=False),
             download_group: gr.update(visible=False)
         }
         
@@ -695,7 +694,6 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
                 status_html: create_dual_progress_html(*tracker.get_progress()),
                 debug_console: render_debug_console(log_capture.get_logs()),
                 result_group: gr.update(visible=False),
-                plot_3d_accordion: gr.update(visible=False), # Keep 3D hidden during inference
                 download_group: gr.update(visible=False) # Keep downloads hidden
             }
 
@@ -707,28 +705,15 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()),
-            # KEEP 3D HIDDEN during 2D generation
-            plot_3d_accordion: gr.update(visible=False),
             download_group: gr.update(visible=False)
         }
         preview_img_path = generate_preview_2d(npz_path, job_dir, log_capture)
         preview_2d_html = render_image_html(preview_img_path)
         
-        # Show 2D preview as soon as it's ready, but STILL keep 3D HIDDEN
-        yield { 
-            status_html: create_dual_progress_html(*tracker.get_progress()),
-            preview_2d: preview_2d_html,
-            result_group: gr.update(visible=True),
-            debug_console: render_debug_console(log_capture.get_logs()),
-            plot_3d_accordion: gr.update(visible=False, open=False), # DO NOT SHOW 3D YET
-            download_group: gr.update(visible=False)
-        }
-        
         tracker.set_phase("preview_3d")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()),
-            plot_3d_accordion: gr.update(visible=False), # Still hidden
             download_group: gr.update(visible=False) 
         }
         
@@ -741,23 +726,15 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
             
         plot_3d_fig = generate_preview_3d(preview_npz if preview_npz.exists() else npz_path, log_capture)
         
-        # 3D is ready - NOW we show it
-        if plot_3d_fig:
-            yield {
-                status_html: create_dual_progress_html(*tracker.get_progress()),
-                plot_3d: plot_3d_fig, # Use the figure directly
-                plot_3d_accordion: gr.update(visible=True, open=True),
-                debug_console: render_debug_console(log_capture.get_logs()),
-                download_group: gr.update(visible=False)
-            }
-        else:
-            yield {
-                status_html: create_dual_progress_html(*tracker.get_progress()),
-                plot_3d: gr.update(value=create_empty_3d_plot("⚠️ Could not render 3D (Empty Figure)")),
-                plot_3d_accordion: gr.update(visible=True, open=True),
-                debug_console: render_debug_console(log_capture.get_logs()),
-                download_group: gr.update(visible=False)
-            }
+        # SHOW BOTH PREVIEWS TOGETHER (2D and 3D) in Tabs
+        yield { 
+            status_html: create_dual_progress_html(*tracker.get_progress()),
+            preview_2d: preview_2d_html,
+            plot_3d: plot_3d_fig if plot_3d_fig else gr.update(value=create_empty_3d_plot("⚠️ Could not render 3D")),
+            result_group: gr.update(visible=True),
+            debug_console: render_debug_console(log_capture.get_logs()),
+            download_group: gr.update(visible=False)
+        }
         
         tracker.set_phase("obj_export")
         yield { 
@@ -798,7 +775,6 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         # Final result yield
         yield {
             plot_3d: gr.update(value=plot_3d_fig if plot_3d_fig else create_empty_3d_plot("⚠️ Preview not available")),
-            plot_3d_accordion: gr.update(visible=True),
             preview_2d: preview_2d_html if 'preview_2d_html' in locals() else gr.update(),
             status_html: final_status,
             result_group: gr.update(visible=True),
@@ -1021,11 +997,14 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
             status_html = gr.HTML(value=create_dual_progress_html(0, 0, "Ready to start", 0, 0))
             
             with gr.Group(visible=False) as result_group:
-                # Layout optimizado: 2D arriba, 3D abajo (solo cuando esté listo)
-                preview_2d = gr.HTML(render_image_html(None))
-                
-                with gr.Accordion("🎨 Interactive 3D Preview", open=True, visible=False) as plot_3d_accordion:
-                    plot_3d = gr.Plot(label="Interactive 3D")
+                # Optimized layout: Tabs for 3D and 2D previews (3D first by default)
+                with gr.Tabs() as preview_tabs:
+                    with gr.Tab("🎨 Interactive 3D (Optimized Preview)", id="tab_3d"):
+                        gr.Markdown("<small>✨ <b>Optimized Preview:</b> This is a simplified version for real-time interaction. For full quality and complete hair density, please download the export formats below.</small>")
+                        plot_3d = gr.Plot(label="Interactive 3D")
+                    
+                    with gr.Tab("🖼️ 2D Preview", id="tab_2d"):
+                        preview_2d = gr.HTML(render_image_html(None))
                 
                 with gr.Group(visible=False) as download_group:
                     gr.Markdown("### 📥 Download Results")
@@ -1037,7 +1016,7 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
     generate_btn.click(
         fn=run_inference,
         inputs=[image_input, cfg_slider, format_checkboxes],
-        outputs=[plot_3d, preview_2d, status_html, result_group, download_file, debug_console, generate_btn, plot_3d_accordion, download_group]
+        outputs=[plot_3d, preview_2d, status_html, result_group, download_file, debug_console, generate_btn, download_group]
     )
 
 if __name__ == "__main__":
