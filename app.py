@@ -359,6 +359,15 @@ def download_checkpoints_hf():
         os.environ.get("DOCKER_CONTAINER") == "true"
     )
     
+    # HF Spaces specific path normalization
+    if 'SPACE_ID' in os.environ:
+        if Path("/data").exists() and os.access("/data", os.W_OK):
+            if not cfg.checkpoints_dir or str(cfg.checkpoints_dir) == ".":
+                cfg.checkpoints_dir = Path("/data/checkpoints")
+        else:
+            if not cfg.checkpoints_dir or str(cfg.checkpoints_dir) == ".":
+                cfg.checkpoints_dir = cfg.repo_dir / "checkpoints"
+    
     if not is_cloud: 
         print(f"❌ Missing checkpoints! Search path: {cfg.checkpoints_dir}")
         return False
@@ -384,17 +393,30 @@ def download_checkpoints_hf():
             cfg.repo_dir / "checkpoints",
             Path("/data/checkpoints"),
             Path("/data"),
-            cfg.repo_dir
+            cfg.repo_dir,
+            Path("/app/checkpoints")
         ]
         
         for path in search_paths:
             if path and path.exists():
-                has_diff = (path / "difflocks_diffusion").exists() and list((path / "difflocks_diffusion").glob("scalp_*.pth"))
-                has_vae = (path / "strand_vae").exists() and list((path / "strand_vae").glob("*.pt"))
+                # Forzar que el path sea un objeto Path
+                path = Path(path)
+                has_diff = (path / "difflocks_diffusion").exists() and any((path / "difflocks_diffusion").glob("scalp_*.pth"))
+                has_vae = (path / "strand_vae").exists() and any((path / "strand_vae").glob("*.pt"))
                 
                 if has_diff and has_vae:
                     print(f"✅ [HF SPACES] Checkpoints (Diffusion & VAE) already present at: {path}")
                     cfg.checkpoints_dir = path
+                    return True
+        
+        # 2. EMERGENCY: Global recursive search BEFORE downloading (just in case they are somewhere else)
+        print("🔍 [HF SPACES] Doing a quick recursive scan for existing models...")
+        for p in cfg.repo_dir.rglob("scalp_*.pth"):
+            if "difflocks_diffusion" in str(p):
+                potential_dir = p.parent.parent
+                if (potential_dir / "strand_vae").exists():
+                    print(f"🎯 [HF SPACES] Found existing models at: {potential_dir}")
+                    cfg.checkpoints_dir = potential_dir
                     return True
 
         print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")

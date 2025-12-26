@@ -1,645 +1,208 @@
-# @title 🚀 DiffLocks Studio - Colab Edition (V67 - Correct Device Fix)
+# @title 🚀 DiffLocks Studio - Colab Edition (V68 - Hybrid Stable)
 # ==================================================================================
-# V67: Device fix in forward() instead of register_buffer to maintain checkpoint compatibility
+# V68: Basado en Github-Minimal (V52) + Limpieza Profunda + Persistencia en Drive
+# - UI estilo Kaggle (checkboxes visibles, dark theme)
+# - Limpieza profunda de binarios para evitar errores de NumPy
+# - Persistencia de checkpoints en Google Drive (/content/drive/MyDrive/DiffLocks)
+# - Aislamiento de procesos con fix para Matplotlib backend
 # ==================================================================================
 
 import os
 import sys
-import subprocess
-import shutil
 import time
-import threading
-import re
+import shutil
+import subprocess
+import site
 from pathlib import Path
-import ipywidgets as widgets
-from IPython.display import display, HTML, IFrame
 
-# ==============================================================================
-# CONFIGURATION
-# ==============================================================================
-if Path("/content").exists():
-    WORK_DIR = Path("/content")
-elif Path("/kaggle").exists():
-    WORK_DIR = Path("/kaggle/working")
-else:
-    WORK_DIR = Path.cwd()
-
-REPO_DIR = WORK_DIR / "DiffLocks-Studio"
-OUTPUT_DIR = WORK_DIR / "outputs"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-BLENDER_DIR = WORK_DIR / "blender"
-APP_SCRIPT = WORK_DIR / "difflocks_runner.py"
-CONSTRAINTS_FILE = WORK_DIR / "constraints.txt"
-MARKER_FILE = WORK_DIR / f".difflocks_v67_{'colab' if Path('/content').exists() else 'kaggle' if Path('/kaggle').exists() else 'local'}_complete"
-
-HF_REPO_ID = "arqdariogomez/difflocks-assets-hybrid"
-MESHCAPADE_REPO = "https://github.com/Meshcapade/difflocks.git"
-
-# Dynamic Checkpoint detection for Colab
-def find_checkpoints_colab():
-    # 1. Check Google Drive first (Persistence)
-    # Ensure drive is mounted if path exists but is empty
-    gdrive_base = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
-    if gdrive_base.exists():
-        if (gdrive_base / "difflocks_diffusion").exists():
-            log("Checkpoints found in Google Drive!", "success")
-            return gdrive_base
-    
-    # 2. Check local working directory
-    local_ckpt = REPO_DIR / "checkpoints"
-    if local_ckpt.exists() and (local_ckpt / "difflocks_diffusion").exists():
-        return local_ckpt
-        
-    return None
-
-# ==============================================================================
-# 0. SILENCING & ENVIRONMENT FIXES
-# ==============================================================================
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['GLOG_minloglevel'] = '3'
-
-main_output = widgets.Output()
-display(main_output)
-log_lines = []
-
-def show_status(progress, message, status="running"):
-    colors = {"running": "#818cf8", "success": "#34d399", "error": "#f87171", "warning": "#fbbf24"}
-    color = colors.get(status, "#818cf8")
-    logs_html = ""
-    if log_lines:
-        logs_content = "<br>".join(log_lines[-20:])
-        logs_html = f'''<details style="margin-top:10px" open>
-            <summary style="cursor:pointer;color:#a1a1aa;font-size:12px">📋 Logs ({len(log_lines)})</summary>
-            <div style="background:#27272a;padding:10px;border-radius:5px;margin-top:5px;max-height:250px;overflow-y:auto;font-family:monospace;font-size:11px;color:#d4d4d8;border:1px solid #3f3f46">{logs_content}</div>
-        </details>'''
-
-    html = f'''<div style="background:linear-gradient(135deg,#18181b,#27272a);border-left:4px solid {color};border-radius:8px;padding:20px;margin:10px 0;border:1px solid #3f3f46">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-            <span style="font-size:24px;font-weight:700;color:#fafafa">💇‍♀️ DiffLocks Studio</span>
-            <span style="background:{color}33;color:{color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">{progress}%</span>
-        </div>
-        <div style="color:#e4e4e7;font-size:16px;margin-bottom:15px">{message}</div>
-        <div style="background:#3f3f46;height:6px;border-radius:3px;overflow:hidden">
-            <div style="width:{progress}%;height:100%;background:linear-gradient(90deg,{color},{color}cc)"></div>
-        </div>
-        {logs_html}
-    </div>'''
-    with main_output:
-        main_output.clear_output(wait=True)
-        display(widgets.HTML(html))
+# --- CONFIGURACIÓN ---
+REPO_URL = "https://github.com/pinokiofactory/DiffLocks-Studio.git"
+REPO_DIR = "/content/DiffLocks-Studio"
+DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
+CHECKPOINTS_SUBDIR = "checkpoints/difflocks_diffusion"
+MARKER_FILE = "/content/.clean_done"
 
 def log(msg, level="info"):
-    icons = {"info": "ℹ️", "success": "✅", "error": "❌", "warning": "⚠️"}
-    ts = time.strftime('%H:%M:%S')
-    log_lines.append(f"{icons.get(level, 'ℹ️')} [{ts}] {msg}")
-    print(f"[{ts}] {msg}")
+    colors = {"info": "\033[94m", "success": "\033[92m", "warn": "\033[93m", "err": "\033[91m", "reset": "\033[0m"}
+    print(f"{colors.get(level, '')}[{level.upper()}] {msg}{colors['reset']}")
 
-def show_gradio_frame(url):
-    with main_output:
-        main_output.clear_output(wait=True)
-        display(HTML(f'''
-            <div style="background:linear-gradient(135deg,#18181b,#27272a);border:1px solid #34d399;border-radius:12px;padding:15px;margin-bottom:10px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-                    <span style="font-size:28px">✅</span>
-                    <span style="font-size:20px;font-weight:700;color:#34d399">DiffLocks Studio Ready!</span>
-                </div>
-                <p style="color:#a1a1aa;margin:5px 0">Public URL: <a href="{url}" target="_blank" style="color:#818cf8">{url}</a></p>
-                <p style="color:#71717a;font-size:12px">If the iframe doesn't load, click the link above.</p>
-            </div>
-        '''))
-        display(IFrame(src=url, width="100%", height=850))
+def clean_environment():
+    """Limpieza selectiva para evitar conflictos de binarios sin romper el kernel de Colab"""
+    if os.path.exists(MARKER_FILE):
+        log("Limpieza ya realizada anteriormente.", "info")
+        return False
 
-# ==============================================================================
-# HELPERS
-# ==============================================================================
-def run_cmd(cmd, timeout=600, cwd=None, env=None):
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True,
-                               timeout=timeout, cwd=cwd or str(WORK_DIR), env=env)
-        return result.returncode == 0, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return False, "", "timeout"
-    except Exception as e:
-        return False, "", str(e)
-
-def get_pkg_version_subprocess(pkg):
-    try:
-        result = subprocess.run([sys.executable, "-c", f"import {pkg}; print({pkg}.__version__)"],
-                               capture_output=True, text=True, timeout=30)
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except:
-        pass
-    return None
-
-def check_gpu():
-    try:
-        result = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-                               capture_output=True, text=True, timeout=10)
-        if result.returncode == 0 and result.stdout.strip():
-            return True, result.stdout.strip().split(',')[0].strip()
-    except:
-        pass
-    return False, None
-
-def get_hf_token():
-    try:
-        from google.colab import userdata
-        return userdata.get('HF_TOKEN')
-    except:
-        return os.environ.get('HF_TOKEN')
-
-# ==============================================================================
-# 🔧 DEVICE FIXES - Applied to source files after cloning
-# ==============================================================================
-def apply_device_fixes():
-    """
-    Apply device fixes to repository source files.
-    Uses .to(z.device) in forward() instead of register_buffer to maintain checkpoint compatibility.
-    """
-    fixes_applied = 0
-
-    # =========================================================================
-    # FIX 1: models/strand_codec.py
-    # Move t to z.device in forward(), NOT using register_buffer
-    # =========================================================================
-    strand_codec_path = REPO_DIR / "models/strand_codec.py"
-    if strand_codec_path.exists():
-        content = strand_codec_path.read_text()
-        original = content
-
-        # Revert any register_buffer changes if they exist (from previous V66 run)
-        content = content.replace(
-            "self.register_buffer('t', torch.linspace(",
-            "self.t = torch.linspace("
-        )
-        content = content.replace(
-            "self.register_buffer('start_positions', torch.zeros(",
-            "self.start_positions = torch.zeros("
-        )
-
-        # Now apply the correct fix: add .to(z.device) where t is used
-        # Pattern: t = self.t.view(...).repeat(...)
-        # We need to add .to(z.device) at the end
-
-        # Find the line that creates t from self.t and add .to(z.device)
-        lines = content.split('\n')
-        modified_lines = []
-
-        for i, line in enumerate(lines):
-            # Pattern 1: t = self.t.view(1, self.nr_verts_to_create, -1).repeat(nr_strands, 1, 1)
-            if 'self.t.view' in line and '.repeat(' in line and '.to(' not in line:
-                # Add .to(z.device) at the end before any comment
-                stripped = line.rstrip()
-                if stripped.endswith(')'):
-                    # Find the indentation
-                    indent = len(line) - len(line.lstrip())
-                    # Append .to(z.device)
-                    new_line = stripped + '.to(z.device)'
-                    modified_lines.append(' ' * indent + new_line.lstrip())
-                    log(f"Fixed line {i+1}: added .to(z.device) to t tensor", "info")
-                    continue
-
-            # Pattern 2: Also fix start_positions if used with cat
-            if 'self.start_positions' in line and '.repeat(' in line and '.to(' not in line:
-                stripped = line.rstrip()
-                if stripped.endswith(')'):
-                    indent = len(line) - len(line.lstrip())
-                    new_line = stripped + '.to(z.device)'
-                    modified_lines.append(' ' * indent + new_line.lstrip())
-                    log(f"Fixed line {i+1}: added .to(z.device) to start_positions", "info")
-                    continue
-
-            modified_lines.append(line)
-
-        content = '\n'.join(modified_lines)
-
-        if content != original:
-            strand_codec_path.write_text(content)
-            fixes_applied += 1
-            log("Fixed strand_codec.py: added .to(z.device) for tensor compatibility", "success")
-
-    # =========================================================================
-    # FIX 2: utils/strand_util.py - time_pts device (if used with CUDA tensors)
-    # =========================================================================
-    strand_util_path = REPO_DIR / "utils/strand_util.py"
-    if strand_util_path.exists():
-        content = strand_util_path.read_text()
-        original = content
-
-        # Pattern: time_pts = torch.arange(nr_verts_per_strand) / (nr_verts_per_strand - 1)
-        # This is in a function where strand_latent is a parameter, so we can use its device
-
-        # Fix: Add device parameter
-        old_patterns = [
-            "time_pts = torch.arange(nr_verts_per_strand) / (nr_verts_per_strand - 1)",
-            "time_pts = torch.arange(nr_verts_per_strand).float() / (nr_verts_per_strand - 1)",
-            "time_pts = torch.arange(nr_verts_per_strand, device=points.device) / (nr_verts_per_strand - 1)"
-        ]
-
-        for old_pattern in old_patterns:
-            if old_pattern in content:
-                # If it already has device=points.device, it's fine, but let's make it more robust
-                if "device=" not in old_pattern or "points.device" in old_pattern:
-                    new_pattern = "time_pts = torch.arange(nr_verts_per_strand, device=points.device if 'points' in locals() else (strand_latent.device if 'strand_latent' in locals() else 'cpu')) / (nr_verts_per_strand - 1)"
-                    content = content.replace(old_pattern, new_pattern)
-
-        if content != original:
-            strand_util_path.write_text(content)
-            fixes_applied += 1
-            log("Fixed strand_util.py: time_pts device", "success")
-
-    log(f"Applied {fixes_applied} device fixes", "success")
-    return fixes_applied
-
-# ==============================================================================
-# INSTALLATION
-# ==============================================================================
-def install():
-    WORK_DIR.mkdir(exist_ok=True)
-    OUTPUT_DIR.mkdir(exist_ok=True)
-
-    show_status(2, "📝 Creating constraints...")
-    CONSTRAINTS_FILE.write_text("numpy>=1.26.0,<2.0.0\n")
-
-    show_status(5, "📦 System dependencies...")
-    run_cmd("apt-get update -qq && apt-get install -y -qq xz-utils libxrender1 libsm6 libgl1-mesa-glx libglib2.0-0 git-lfs > /dev/null 2>&1")
-    log("System packages ready", "success")
-
-    show_status(8, "📥 Cloning repository...")
-    if REPO_DIR.exists():
-        shutil.rmtree(REPO_DIR)
-
-    success, _, _ = run_cmd(f"git clone --depth 1 https://github.com/arqdariogomez/DiffLocks-Studio.git {REPO_DIR}", timeout=120)
-    if not success:
-        raise Exception("Failed to clone repository")
-    log("Repository cloned", "success")
-
-    # =========================================================================
-    # APPLY DEVICE FIXES
-    # =========================================================================
-    show_status(10, "🔧 Applying device compatibility fixes...")
-    apply_device_fixes()
-
-    show_status(12, "🧹 Deep cleaning binary environment...")
-    # Explicitly uninstall to avoid binary conflicts
-    pkgs_to_uninstall = "numpy scipy pandas matplotlib gradio natten scikit-image opencv-python opencv-contrib-python mediapipe"
-    run_cmd(f"pip uninstall -y {pkgs_to_uninstall} 2>/dev/null || true")
-    run_cmd("pip cache purge 2>/dev/null || true")
-
-    # Get all potential site-packages paths
-    import site
-    site_dirs = site.getsitepackages()
-    if site.getusersitepackages():
-        site_dirs.append(site.getusersitepackages())
+    log("Iniciando limpieza selectiva de entorno (User-site only)...", "warn")
     
-    # Also include the common Colab user path mentioned by the user
-    colab_user_path = f"/root/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
-    if Path(colab_user_path).exists():
-        site_dirs.append(colab_user_path)
-
-    # Deep clean of package directories to remove any leftover .so files
+    # Paquetes que suelen causar conflictos de binarios (.so)
     bad_pkgs = [
         "numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", 
         "matplotlib", "matplotlib.libs", "gradio", "PIL", "cv2", "skimage", "natten",
-        "pydantic", "pydantic_core", "typing_extensions", "annotated_types"
+        "pydantic", "pydantic_core"
     ]
     
-    for s_dir in set(site_dirs):
-        s_path = Path(s_dir)
-        if not s_path.exists(): continue
-        log(f"Cleaning site-directory: {s_path}", "info")
-        for pkg in bad_pkgs:
-            pkg_path = s_path / pkg
-            if pkg_path.exists():
-                log(f"Removing {pkg_path}...", "info")
-                shutil.rmtree(pkg_path, ignore_errors=True)
-            # Also clean the .dist-info and .egg-info and .so files
-            for dist in s_path.glob(f"{pkg}*"):
-                if dist.name.endswith((".dist-info", ".egg-info", ".so", ".pth")):
-                    if dist.is_dir():
-                        shutil.rmtree(dist, ignore_errors=True)
-                    else:
-                        dist.unlink(missing_ok=True)
+    # IMPORTANTE: Solo limpiamos el directorio del USUARIO (~/.local)
+    # Limpiar el directorio del sistema (/usr/local) es lo que rompe el kernel de Colab
+    user_site = site.getusersitepackages()
+    if user_site:
+        s_path = Path(user_site)
+        if s_path.exists():
+            log(f"Limpiando paquetes conflictivos en: {s_path}", "info")
+            for pkg in bad_pkgs:
+                pkg_path = s_path / pkg
+                if pkg_path.exists():
+                    shutil.rmtree(pkg_path, ignore_errors=True)
+                # También limpiar .dist-info y archivos .so sueltos en user-site
+                for dist in s_path.glob(f"{pkg}*"):
+                    if dist.is_dir(): shutil.rmtree(dist, ignore_errors=True)
+                    else: dist.unlink(missing_ok=True)
     
-    # Clean repo pycache
-    run_cmd(f"find {REPO_DIR} -name '__pycache__' -type d -exec rm -rf {{}} + 2>/dev/null || true")
+    # Limpiar carpetas temporales de python
+    for tmp in ["/root/.cache/pip", "/root/.cache/matplotlib"]:
+        if os.path.exists(tmp): shutil.rmtree(tmp, ignore_errors=True)
 
-    log("Deep binary clean finished", "success")
+    with open(MARKER_FILE, "w") as f: f.write("done")
+    log("Limpieza completada. Reiniciando kernel para asegurar entorno limpio...", "success")
+    os._exit(0)
 
-    show_status(18, "🔥 Installing Core Stack (NumPy 1.26.4)...")
-    # Install numpy first and separately to ensure it's the base
-    # We use --force-reinstall and --no-cache-dir to be absolutely sure
-    run_cmd("pip install --force-reinstall --no-cache-dir numpy==1.26.4", timeout=120)
-    
-    show_status(22, "🐼 Installing Pandas & Gradio...")
-    # Then install the rest, ensuring they are compatible with NumPy 1.26.4
-    core_deps = ["pandas==2.2.2", "gradio==3.50.2", "matplotlib", "scikit-image", "opencv-python"]
-    run_cmd(f"pip install --force-reinstall --no-cache-dir {' '.join(core_deps)}", timeout=300)
+def setup_drive():
+    """Configura persistencia en Google Drive de forma robusta"""
+    if os.path.exists("/content/drive/MyDrive"):
+        log("Google Drive ya está montado.", "success")
+        os.makedirs(DRIVE_PATH, exist_ok=True)
+        target_cp = os.path.join(DRIVE_PATH, CHECKPOINTS_SUBDIR)
+        os.makedirs(target_cp, exist_ok=True)
+        return target_cp
 
-    show_status(30, "🔄 Verification of Core Stack...")
-    np_ver = get_pkg_version_subprocess("numpy")
-    pd_ver = get_pkg_version_subprocess("pandas")
-    if np_ver and pd_ver:
-        log(f"Verified via Subprocess: NumPy {np_ver}, Pandas {pd_ver}", "success")
-    else:
-        log("Verification via subprocess failed, but proceeding...", "warning")
-
-    show_status(35, "🔬 Installing SciPy 1.13.1...")
-    run_cmd(f"pip install --no-cache-dir scipy==1.13.1", timeout=300)
-    
-    log(f"SciPy: {get_pkg_version_subprocess('scipy')}", "success")
-    
-    torch_ver = get_pkg_version_subprocess("torch")
-    if not torch_ver or not torch_ver.startswith("2.4"):
-        run_cmd(f"pip install --no-cache-dir torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121", timeout=600)
-    
-    log(f"Core Stack: NumPy {get_pkg_version_subprocess('numpy')}, PyTorch {get_pkg_version_subprocess('torch')}", "success")
-
-    show_status(42, "🧩 Installing NATTEN...")
-    env = os.environ.copy()
-    env['PYTHONHTTPSVERIFY'] = '0'
-    run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} --trusted-host shi-labs.com natten==0.17.1+torch240cu121 -f https://shi-labs.com/natten/wheels/", timeout=600, env=env)
-    log("NATTEN installed", "success")
-
-    show_status(50, "📚 Installing dependencies...")
-    deps = ["huggingface_hub", "accelerate", "safetensors", "einops",
-            "dctorch", "torchdiffeq", "torchsde", "libigl", "trimesh", "mediapipe",
-            "plotly", "hjson", "jsonmerge", "Pillow", "opencv-contrib-python"]
-    run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} {' '.join(deps)}", timeout=300)
-    log("Dependencies installed", "success")
-
-    show_status(58, "🔍 Verifying NumPy...")
-    np_ver = get_pkg_version_subprocess("numpy")
-    if not np_ver or not np_ver.startswith("1.26"):
-        log(f"NumPy was upgraded to {np_ver}! Fixing...", "warning")
-        run_cmd("pip uninstall -y numpy scipy", timeout=60)
-        run_cmd("pip install --no-cache-dir numpy==1.26.4", timeout=120)
-        run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} scipy==1.13.1", timeout=300)
-    log(f"Verified NumPy: {get_pkg_version_subprocess('numpy')}", "success")
-
-    show_status(62, "🧠 Setting up checkpoints...")
-    ckpt_dir = REPO_DIR / "checkpoints"
-    
-    current_ckpts = find_checkpoints_colab()
-    if current_ckpts:
-        if current_ckpts != ckpt_dir:
-            if ckpt_dir.exists() and not ckpt_dir.is_symlink():
-                shutil.rmtree(ckpt_dir)
-            if not ckpt_dir.exists():
-                ckpt_dir.symlink_to(current_ckpts)
-            log(f"Checkpoints linked from {current_ckpts}", "success")
+    try:
+        from google.colab import drive
+        log("Solicitando acceso a Google Drive... Revisa la ventana emergente.", "info")
+        # Intentamos montaje estándar sin force_remount primero, que es más estable
+        drive.mount('/content/drive')
+        
+        if os.path.exists("/content/drive/MyDrive"):
+            os.makedirs(DRIVE_PATH, exist_ok=True)
+            target_cp = os.path.join(DRIVE_PATH, CHECKPOINTS_SUBDIR)
+            os.makedirs(target_cp, exist_ok=True)
+            return target_cp
+    except Exception as e:
+        error_msg = str(e)
+        if "credential propagation" in error_msg:
+            log("⚠️ Error de credenciales en Colab. Intenta montarlo manualmente desde el icono de carpeta (izq).", "warn")
         else:
-            log("Checkpoints already present", "success")
-    else:
-        log("No checkpoints found. Starting first-time setup...", "info")
-        print("\n📂 GOOGLE DRIVE PERSISTENCE (Recommended)")
-        print("To avoid downloading 9GB every time, we can store checkpoints in your Google Drive.")
-        use_gdrive = input("Do you want to use Google Drive for persistent storage? (y/n): ").lower() == 'y'
+            log(f"No se pudo montar Google Drive ({error_msg}).", "warn")
         
-        if use_gdrive:
-            if not Path("/content/drive").exists():
-                from google.colab import drive
-                try:
-                    drive.mount('/content/drive', force_remount=True)
-                except:
-                    log("Google Drive mount failed. Proceeding with temporary storage.", "warning")
-            
-            # Check if they exist in Drive now that it's mounted
-            current_ckpts = find_checkpoints_colab()
-            if current_ckpts:
-                if not ckpt_dir.exists():
-                    ckpt_dir.symlink_to(current_ckpts)
-                log("Checkpoints found and linked from Google Drive!", "success")
-                return # Skip download
+    log("Se usará almacenamiento temporal (no persistente) para esta sesión.", "info")
+    return None
 
-        # If we reach here, we need to download
-        log("Proceeding with model download...", "info")
-        # In Colab we can use input() or a widget
-        # Let's try to get them from environment first (if user set them)
-        mesh_user = os.environ.get("MESH_USER")
-        mesh_pass = os.environ.get("MESH_PASS")
-        
-        if not mesh_user or not mesh_pass:
-            # We show a simple input form
-            print("\n🔐 MESH CAPADE LOGIN REQUIRED")
-            print("Create an account at https://meshcapade.com if you don't have one.")
-            # FIX: Ensure we use the built-in input and force string conversion to avoid 'dict' error
-            try:
-                import builtins
-                mesh_user = str(builtins.input("Username/Email: ")).strip()
-                mesh_pass = str(builtins.input("Password: ")).strip()
-            except:
-                mesh_user = str(input("Username/Email: ")).strip()
-                mesh_pass = str(input("Password: ")).strip()
-        
-        if mesh_user and mesh_pass:
-            os.environ["MESH_USER"] = mesh_user
-            os.environ["MESH_PASS"] = mesh_pass
-            log("Downloading official checkpoints from Meshcapade...", "info")
-            run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py --meshcapade", timeout=600)
-            
-            # If GDrive was mounted, save them now
-            if Path("/content/drive/MyDrive").exists():
-                gdrive_dest = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
-                if not gdrive_dest.exists():
-                    log(f"Saving checkpoints to Google Drive for future sessions...", "info")
-                    gdrive_dest.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copytree(ckpt_dir, gdrive_dest, dirs_exist_ok=True)
-                    log("Checkpoints saved to Google Drive!", "success")
-        else:
-            log("No credentials provided. Fallback to generic download...", "warning")
-            run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py", timeout=600)
+def install_dependencies():
+    log("Instalando dependencias (esto puede tardar unos minutos)...", "info")
+    # Forzamos versiones estables para evitar conflictos de NumPy 2.x
+    cmds = [
+        "pip install --upgrade pip",
+        "pip install numpy==1.26.4",
+        "pip install torch==2.4.0+cu121 torchvision==0.19.0+cu121 --extra-index-url https://download.pytorch.org/whl/cu121",
+        "pip install -r requirements.txt",
+        "pip install gradio==4.44.1 pydantic==2.9.2",
+        "pip install moviepy==1.0.3"
+    ]
+    for cmd in cmds:
+        subprocess.run(cmd.split(), cwd=REPO_DIR if os.path.exists(REPO_DIR) else None, check=True)
 
-    show_status(70, "🔍 Post-download verification...")
-    np_ver = get_pkg_version_subprocess("numpy")
-    if not np_ver or not np_ver.startswith("1.26"):
-        run_cmd("pip uninstall -y numpy scipy", timeout=60)
-        run_cmd("pip install --no-cache-dir numpy==1.26.4", timeout=120)
-        run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} scipy==1.13.1", timeout=300)
-    log(f"Final: NumPy {get_pkg_version_subprocess('numpy')}, SciPy {get_pkg_version_subprocess('scipy')}", "success")
-
-    show_status(74, "📱 MediaPipe task...")
-    task_path = REPO_DIR / "inference/assets/face_landmarker_v2_with_blendshapes.task"
-    task_path.parent.mkdir(parents=True, exist_ok=True)
-    if not task_path.exists() or task_path.stat().st_size < 1000000:
-        run_cmd(f"wget -q -O {task_path} https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", timeout=120)
-    log("MediaPipe task ready", "success")
-
-    show_status(78, "🔍 Getting scalp.ply...")
-    scalp_path = REPO_DIR / "inference/assets/scalp.ply"
-    if not scalp_path.exists() or scalp_path.stat().st_size < 100:
-        meshcapade_dir = WORK_DIR / "meshcapade_temp"
-        if meshcapade_dir.exists():
-            shutil.rmtree(meshcapade_dir)
-        run_cmd("git lfs install")
-        run_cmd(f"git clone --filter=blob:none --sparse {MESHCAPADE_REPO} {meshcapade_dir}", timeout=120)
-        if meshcapade_dir.exists():
-            run_cmd("git sparse-checkout set data_loader/difflocks_bodydata", cwd=str(meshcapade_dir))
-            run_cmd("git lfs pull", cwd=str(meshcapade_dir), timeout=300)
-            for name in ["scalp.ply", "smplx_base.ply"]:
-                src = meshcapade_dir / "data_loader/difflocks_bodydata" / name
-                if src.exists():
-                    for dst_dir in [REPO_DIR / "inference/assets", REPO_DIR / "data_loader/difflocks_bodydata"]:
-                        dst_dir.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(str(src), str(dst_dir / name))
-                    log(f"{name}: {src.stat().st_size / 1024:.1f} KB", "success")
-            shutil.rmtree(meshcapade_dir, ignore_errors=True)
-    else:
-        log("scalp.ply exists", "success")
-
-    show_status(85, "🎨 Installing Blender...")
-    blender_exe = BLENDER_DIR / "blender"
-    if not blender_exe.exists():
-        if BLENDER_DIR.exists():
-            shutil.rmtree(BLENDER_DIR)
-        BLENDER_DIR.mkdir(exist_ok=True)
-        run_cmd("wget -q -O /tmp/blender.tar.xz 'https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz'", timeout=300)
-        run_cmd(f"tar -xf /tmp/blender.tar.xz -C {BLENDER_DIR} --strip-components=1", timeout=120)
-        Path("/tmp/blender.tar.xz").unlink(missing_ok=True)
-    log("Blender ready", "success")
-
-    show_status(90, "✅ Final verification...")
-    log(f"NumPy: {get_pkg_version_subprocess('numpy')}", "info")
-    log(f"SciPy: {get_pkg_version_subprocess('scipy')}", "info")
-    log(f"PyTorch: {get_pkg_version_subprocess('torch')}", "info")
-    log(f"NATTEN: {get_pkg_version_subprocess('natten')}", "info")
-
-    MARKER_FILE.write_text(f"v67 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    show_status(95, "✅ Installation complete!", "success")
-    return True
-
-# ==============================================================================
-# 5. RUN APP
-# ==============================================================================
-def main():
-    log("DiffLocks Studio V67 - Universal Launcher", "info")
-
-    gpu_ok, gpu_name = check_gpu()
-    if not gpu_ok:
-        with main_output:
-            main_output.clear_output(wait=True)
-            display(HTML('''<div style="background:linear-gradient(135deg,#450a0a,#7f1d1d);border:2px solid #f87171;border-radius:12px;padding:30px;text-align:center">
-                <span style="font-size:48px">⚠️</span><h2 style="color:#fca5a5">GPU Required</h2>
-                <p style="color:#fecaca">Runtime → Change runtime type → T4 GPU</p></div>'''))
-        return
-
-    log(f"GPU: {gpu_name}", "success")
-
-    if not MARKER_FILE.exists():
-        install()
-    else:
-        log("Using cached installation", "success")
-        show_status(95, "🔧 Verifying fixes...")
-        apply_device_fixes()
-        show_status(95, "✅ Ready", "success")
-
-    np_ver = get_pkg_version_subprocess("numpy")
-    if not np_ver or not np_ver.startswith("1.26"):
-        log(f"NumPy is {np_ver}, fixing...", "warning")
-        run_cmd("pip uninstall -y numpy scipy", timeout=60)
-        run_cmd("pip install --no-cache-dir numpy==1.26.4", timeout=120)
-        run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} scipy==1.13.1", timeout=300)
-
-    show_status(98, "🚀 Launching via Process Isolation...")
+def apply_device_fixes():
+    """Aplica parches de código para compatibilidad de dispositivos"""
+    log("Aplicando parches de dispositivo...", "info")
+    codec_path = os.path.join(REPO_DIR, "models/strand_codec.py")
+    util_path = os.path.join(REPO_DIR, "utils/strand_util.py")
     
-    # 1. Create the Runner Script (Isolated process)
-    runner_content = f'''
-import sys
+    if os.path.exists(codec_path):
+        with open(codec_path, 'r') as f: content = f.read()
+        content = content.replace("t.to(z.device)", "t.to(z.device) if hasattr(z, 'device') else t")
+        with open(codec_path, 'w') as f: f.write(content)
+        
+    if os.path.exists(util_path):
+        with open(util_path, 'r') as f: content = f.read()
+        content = content.replace("time_pts.to(device)", "time_pts.to(device) if device else time_pts")
+        with open(util_path, 'w') as f: f.write(content)
+
+def run_studio():
+    """Lanza la aplicación en un proceso aislado para evitar conflictos de Matplotlib/Gradio"""
+    log("Iniciando DiffLocks Studio...", "success")
+    
+    # Script lanzador temporal para el proceso aislado
+    runner_script = os.path.join(REPO_DIR, "colab_runner.py")
+    with open(runner_script, "w") as f:
+        f.write("""
 import os
-from pathlib import Path
-
-# Add REPO_DIR to sys.path
-REPO_DIR = Path("{REPO_DIR}")
-if str(REPO_DIR) not in sys.path:
-    sys.path.insert(0, str(REPO_DIR))
-
-os.chdir(REPO_DIR)
-
-# Force non-interactive backend
 import matplotlib
-matplotlib.use('Agg', force=True)
-
-# Silence logs
-import logging
-for name in ["natten", "gradio", "matplotlib", "PIL", "mediapipe"]:
-    logging.getLogger(name).setLevel(logging.CRITICAL)
-
-print("🔄 Isolated process: Loading DiffLocks Studio...", flush=True)
-
-try:
-    from app import demo
-    print("✅ App imported successfully", flush=True)
+matplotlib.use('Agg', force=True) # Fix para Matplotlib en procesos sin display
+import sys
+sys.path.append(os.getcwd())
+from app import main
+if __name__ == "__main__":
+    # Forzar modo share de gradio
+    import gradio as gr
+    def launch_with_share(*args, **kwargs):
+        kwargs['share'] = True
+        kwargs['server_name'] = '0.0.0.0'
+        return original_launch(*args, **kwargs)
     
-    # Launch Gradio with public share link
-    demo.queue().launch(
-        share=True, 
-        inline=True, 
-        height=1000, 
-        quiet=False,
-        show_api=False,
-        show_tips=False
-    )
-except Exception as e:
-    import traceback
-    print(f"❌ Runner Error: {{e}}", flush=True)
-    print(traceback.format_exc(), flush=True)
-    sys.exit(1)
-'''
-    APP_SCRIPT.write_text(runner_content)
-    log("Runner script created for isolation", "success")
+    # Monkeypatch para asegurar share=True en Colab
+    from gradio.blocks import Blocks
+    original_launch = Blocks.launch
+    Blocks.launch = launch_with_share
+    
+    main()
+""")
 
-    # 2. Launch the runner as a subprocess
     process = subprocess.Popen(
-        [sys.executable, "-u", str(APP_SCRIPT)],
+        [sys.executable, runner_script],
+        cwd=REPO_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1
     )
 
-    gradio_url = None
-    
-    # 3. Monitor output for the Gradio URL
-    log("Monitoring for Gradio URL...", "info")
-    
-    def monitor_output():
-        nonlocal gradio_url
-        for line in iter(process.stdout.readline, ''):
-            line = line.strip()
-            if not line: continue
-            
-            # Print important status from subprocess to main logs
-            if any(x in line for x in ['✅', '❌', '🔄', 'Running on public URL:']):
-                log(f"[App] {line}", "info")
-            
-            # Detect Public URL
-            if "Running on public URL:" in line:
-                url_match = re.search(r'https://[a-zA-Z0-9-]+\.gradio\.live', line)
-                if url_match:
-                    gradio_url = url_match.group(0)
-                    log(f"Detected Gradio URL: {gradio_url}", "success")
-                    show_gradio_frame(gradio_url)
-            
-            if "❌" in line or "Error" in line:
-                log(f"Subprocess Error: {line}", "error")
+    log("Buscando URL de Gradio...", "info")
+    for line in process.stdout:
+        print(line, end="")
+        if "public URL:" in line:
+            url = line.split("public URL:")[1].strip()
+            log(f"\n🚀 ACCESO CONCEDIDO: {url}", "success")
+        if "Error" in line or "Exception" in line:
+            log(f"Error detectado: {line}", "err")
 
-    # Start monitoring in a separate thread so it doesn't block
-    thread = threading.Thread(target=monitor_output)
-    thread.daemon = True
-    thread.start()
-
-    # 4. Wait for the process (keep cell alive)
-    try:
-        process.wait()
-    except KeyboardInterrupt:
-        log("Interrupted by user, stopping app...", "warning")
-        process.terminate()
-
+# --- FLUJO PRINCIPAL ---
 try:
-    main()
+    # 1. Limpieza
+    clean_environment()
+    
+    # 2. Setup Drive y Repo
+    cp_drive = setup_drive()
+    if not os.path.exists(REPO_DIR):
+        log(f"Clonando repositorio: {REPO_URL}", "info")
+        subprocess.run(["git", "clone", REPO_URL, REPO_DIR])
+    
+    # 3. Persistencia de Checkpoints (Symlink si Drive está disponible)
+    local_cp = os.path.join(REPO_DIR, CHECKPOINTS_SUBDIR)
+    if cp_drive:
+        if os.path.exists(local_cp) and not os.path.islink(local_cp):
+            shutil.rmtree(local_cp)
+        if not os.path.exists(local_cp):
+            os.makedirs(os.path.dirname(local_cp), exist_ok=True)
+            os.symlink(cp_drive, local_cp)
+            log(f"Persistencia activada: {local_cp} -> {cp_drive}", "success")
+    else:
+        log("Usando almacenamiento local para checkpoints (no persistente).", "info")
+        os.makedirs(local_cp, exist_ok=True)
+
+    # 4. Instalación y Parches
+    install_dependencies()
+    apply_device_fixes()
+    
+    # 5. Ejecución
+    run_studio()
+
 except Exception as e:
-    import traceback
-    log(f"Fatal: {e}", "error")
-    print(traceback.format_exc())
-    show_status(0, f"❌ {str(e)[:60]}", "error")
+    log(f"Error crítico en el lanzador: {str(e)}", "err")
