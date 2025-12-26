@@ -45,6 +45,8 @@ class StderrFilter:
             self.original.write(msg)
     def flush(self):
         self.original.flush()
+    def close(self):
+        pass # uvicorn calls close() on handlers during shutdown
     def restore(self):
         sys.stderr = self.original
 
