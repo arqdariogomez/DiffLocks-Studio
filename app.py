@@ -384,8 +384,14 @@ def download_checkpoints_hf():
         token = os.environ.get("HF_TOKEN")
         
         # 1. Download Checkpoints
-        # We allow both nested "checkpoints/..." and root "difflocks_diffusion/..."
         print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")
+        
+        # Check if files already exist to avoid redundant download and confusion
+        # We check the repo root for the 'difflocks_diffusion' folder
+        if (cfg.repo_dir / "difflocks_diffusion").exists():
+             print("✅ [DEBUG] Files already detected in repo root. Skipping download.")
+             return True
+
         snapshot_download(
             repo_id="arqdariogomez/difflocks-assets-hybrid",
             repo_type="dataset",
@@ -393,7 +399,7 @@ def download_checkpoints_hf():
                 "difflocks_diffusion/*", "strand_vae/*", "rgb2material/*",
                 "checkpoints/difflocks_diffusion/*", "checkpoints/strand_vae/*", "checkpoints/rgb2material/*"
             ],
-            local_dir=str(cfg.repo_dir), # Download to repo root to handle "checkpoints/" folder naturally
+            local_dir=str(cfg.repo_dir),
             local_dir_use_symlinks=False,
             token=token if token else None,
             ignore_patterns=["*.md", ".git*"]
@@ -474,22 +480,35 @@ if not vae_files:
 model = None
 
 def load_model():
-    global model, ckpt_files, vae_files
+    global model, ckpt_files, vae_files, checkpoints_dir
     if model is not None: return
 
+    # Re-scan if lists are empty (common after auto-download)
     if not ckpt_files or not vae_files:
-        # Re-check files after download attempt just in case
+        print("🔍 [RE-SCAN] Looking for checkpoints before loading model...")
+        
+        # 1. Check current checkpoints_dir
         ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
         vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
         
-        if not ckpt_files or not vae_files:
-            error_msg = f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}"
-            print(f"❌ {error_msg}")
-            # If we are in HF Spaces, suggest setting secrets
-            if cfg.platform == 'huggingface':
-                print("💡 Hint: If the repo is private, set HF_TOKEN in Space Secrets.")
-                print("💡 Hint: You can also set MESH_USER and MESH_PASS for official models.")
-            raise FileNotFoundError(error_msg)
+        # 2. If still not found, try recursive repo scan
+        if not ckpt_files:
+            print("🔍 [RE-SCAN] Not in primary path. Searching recursively...")
+            for p in cfg.repo_dir.rglob("scalp_*.pth"):
+                checkpoints_dir = p.parent.parent
+                cfg.checkpoints_dir = checkpoints_dir
+                ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
+                vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
+                if ckpt_files: break
+
+    if not ckpt_files or not vae_files:
+        error_msg = f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}"
+        print(f"❌ {error_msg}")
+        # If we are in HF Spaces, suggest setting secrets
+        if cfg.platform == 'huggingface':
+            print("💡 Hint: If the repo is private, set HF_TOKEN in Space Secrets.")
+            print("💡 Hint: You can also set MESH_USER and MESH_PASS for official models.")
+        raise FileNotFoundError(error_msg)
     
     print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
