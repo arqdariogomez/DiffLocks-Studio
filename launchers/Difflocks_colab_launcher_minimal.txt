@@ -228,17 +228,15 @@ def apply_device_fixes():
         old_patterns = [
             "time_pts = torch.arange(nr_verts_per_strand) / (nr_verts_per_strand - 1)",
             "time_pts = torch.arange(nr_verts_per_strand).float() / (nr_verts_per_strand - 1)",
+            "time_pts = torch.arange(nr_verts_per_strand, device=points.device) / (nr_verts_per_strand - 1)"
         ]
 
         for old_pattern in old_patterns:
             if old_pattern in content:
-                # Need to check what device variable is available in context
-                # Looking at the function, strand_latent should be available
-                new_pattern = old_pattern.replace(
-                    "torch.arange(nr_verts_per_strand)",
-                    "torch.arange(nr_verts_per_strand, device=strand_latent.device if hasattr(strand_latent, 'device') else 'cpu')"
-                )
-                content = content.replace(old_pattern, new_pattern)
+                # If it already has device=points.device, it's fine, but let's make it more robust
+                if "device=" not in old_pattern or "points.device" in old_pattern:
+                    new_pattern = "time_pts = torch.arange(nr_verts_per_strand, device=points.device if 'points' in locals() else (strand_latent.device if 'strand_latent' in locals() else 'cpu')) / (nr_verts_per_strand - 1)"
+                    content = content.replace(old_pattern, new_pattern)
 
         if content != original:
             strand_util_path.write_text(content)
@@ -278,39 +276,44 @@ def install():
     apply_device_fixes()
 
     show_status(12, "🧹 Cleaning environment...")
-    run_cmd("pip uninstall -y numpy scipy pandas matplotlib 2>/dev/null || true")
+    # Explicitly uninstall to avoid binary conflicts
+    run_cmd("pip uninstall -y numpy scipy pandas matplotlib gradio natten 2>/dev/null || true")
     run_cmd("pip cache purge 2>/dev/null || true")
 
     site_packages = subprocess.run([sys.executable, "-c", "import site; print(site.getsitepackages()[0])"],
                                    capture_output=True, text=True).stdout.strip()
-    for pkg in ["numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", "matplotlib", "matplotlib.libs"]:
+    # Deep clean of package directories to remove any leftover .so files
+    for pkg in ["numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", "matplotlib", "matplotlib.libs", "gradio"]:
         pkg_path = Path(site_packages) / pkg
         if pkg_path.exists():
             shutil.rmtree(pkg_path, ignore_errors=True)
         for dist in Path(site_packages).glob(f"{pkg}*.dist-info"):
             shutil.rmtree(dist, ignore_errors=True)
-    log("Cleaned numpy/scipy/pandas", "success")
+    log("Cleaned numpy/scipy/pandas/gradio", "success")
 
-    show_status(18, "🔥 Installing PyTorch 2.4.0...")
-    torch_ver = get_pkg_version_subprocess("torch")
-
-    if not torch_ver or not torch_ver.startswith("2.4"):
-        run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121", timeout=600)
-
-    torch_ver = get_pkg_version_subprocess("torch")
-    log(f"PyTorch: {torch_ver}", "success")
-
-    show_status(30, "🔢 Installing NumPy 1.26.4...")
-    run_cmd("pip install --no-cache-dir --force-reinstall numpy==1.26.4", timeout=120)
-
-    np_ver = get_pkg_version_subprocess("numpy")
-    if not np_ver or not np_ver.startswith("1.26"):
-        raise Exception(f"NumPy installation failed: {np_ver}")
-    log(f"NumPy: {np_ver}", "success")
+    show_status(18, "🔥 Installing Core Stack (NumPy 1.26.4)...")
+    # Install numpy first and separately to ensure it's the base
+    run_cmd("pip install --no-cache-dir numpy==1.26.4", timeout=120)
+    
+    # Then install the rest, ensuring they are compatible
+    core_deps = ["pandas==2.2.2", "matplotlib", "gradio==3.50.2"]
+    run_cmd(f"pip install --no-cache-dir {' '.join(core_deps)}", timeout=300)
 
     show_status(35, "🔬 Installing SciPy 1.13.1...")
-    run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} scipy==1.13.1", timeout=300)
+    run_cmd(f"pip install --no-cache-dir scipy==1.13.1", timeout=300)
+    
+    # Critical: Force reload of numpy to avoid 'dtype size changed' error
+    import importlib
+    import numpy
+    importlib.reload(numpy)
+    
     log(f"SciPy: {get_pkg_version_subprocess('scipy')}", "success")
+    
+    torch_ver = get_pkg_version_subprocess("torch")
+    if not torch_ver or not torch_ver.startswith("2.4"):
+        run_cmd(f"pip install --no-cache-dir torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121", timeout=600)
+    
+    log(f"Core Stack: NumPy {get_pkg_version_subprocess('numpy')}, PyTorch {get_pkg_version_subprocess('torch')}", "success")
 
     show_status(42, "🧩 Installing NATTEN...")
     env = os.environ.copy()
@@ -319,9 +322,9 @@ def install():
     log("NATTEN installed", "success")
 
     show_status(50, "📚 Installing dependencies...")
-    deps = ["gradio==3.50.2", "huggingface_hub", "accelerate", "safetensors", "einops",
+    deps = ["huggingface_hub", "accelerate", "safetensors", "einops",
             "dctorch", "torchdiffeq", "torchsde", "libigl", "trimesh", "mediapipe",
-            "plotly", "hjson", "jsonmerge", "Pillow", "opencv-contrib-python", "pandas==2.2.2", "matplotlib"]
+            "plotly", "hjson", "jsonmerge", "Pillow", "opencv-contrib-python"]
     run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} {' '.join(deps)}", timeout=300)
     log("Dependencies installed", "success")
 

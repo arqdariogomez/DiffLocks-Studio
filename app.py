@@ -333,7 +333,8 @@ def download_checkpoints_hf():
     if list(diffusion_dir.glob("scalp_*.pth")) and list(vae_dir.glob("strand_codec.pt")):
         return
 
-    print("🚀 [HF SPACES] Downloading missing checkpoints...")
+    print(f"🚀 [HF SPACES] Downloading missing checkpoints to {ckpt_dir}...")
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
     
     # Try official Meshcapade if credentials available
     mesh_user = os.environ.get("MESH_USER")
@@ -354,25 +355,27 @@ def download_checkpoints_hf():
         token = os.environ.get("HF_TOKEN")
         
         # 1. Download Checkpoints to checkpoints_dir
-        print("🔹 [HF SPACES] Downloading models...")
+        print(f"🔹 [HF SPACES] Downloading models to {cfg.checkpoints_dir}...")
         snapshot_download(
             repo_id="arqdariogomez/difflocks-assets-hybrid",
             repo_type="dataset",
             allow_patterns=["difflocks_diffusion/*", "strand_vae/*", "rgb2material/*"],
             local_dir=str(cfg.checkpoints_dir),
             local_dir_use_symlinks=False,
-            token=token if token else None
+            token=token if token else None,
+            ignore_patterns=["*.md", ".git*"]
         )
         
         # 2. Download Assets to inference/
-        print("🔹 [HF SPACES] Downloading assets...")
+        print(f"🔹 [HF SPACES] Downloading assets to {cfg.repo_dir / 'inference'}...")
         snapshot_download(
             repo_id="arqdariogomez/difflocks-assets-hybrid",
             repo_type="dataset",
             allow_patterns=["assets/*"],
             local_dir=str(cfg.repo_dir / "inference"),
             local_dir_use_symlinks=False,
-            token=token if token else None
+            token=token if token else None,
+            ignore_patterns=["*.md", ".git*"]
         )
         
         print("✅ [HF SPACES] All assets downloaded successfully.")
@@ -416,7 +419,13 @@ def load_model():
         vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
         
         if not ckpt_files or not vae_files:
-            raise FileNotFoundError(f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}")
+            error_msg = f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}"
+            print(f"❌ {error_msg}")
+            # If we are in HF Spaces, suggest setting secrets
+            if cfg.platform == 'huggingface':
+                print("💡 Hint: If the repo is private, set HF_TOKEN in Space Secrets.")
+                print("💡 Hint: You can also set MESH_USER and MESH_PASS for official models.")
+            raise FileNotFoundError(error_msg)
     
     print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)

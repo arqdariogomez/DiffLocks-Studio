@@ -40,16 +40,22 @@ class Config:
             needs_share = True
         elif 'SPACE_ID' in os.environ: 
             platform = 'huggingface'
-            work_dir = Path.cwd()
+            # In HF Spaces, we want to ensure we are in /app if possible
+            if Path("/app").exists():
+                work_dir = Path("/app")
+            else:
+                work_dir = Path.cwd()
             repo_dir = work_dir
             blender_exe = Path("/tmp/blender/blender") 
             needs_share = False
             
             # Persistent storage check for HF Spaces
-            if Path("/data").exists() and os.access("/data", os.W_OK):
-                # Use /data/checkpoints if persistent storage is available
-                # but keep repo_dir as current for code access
-                pass 
+            # Check /data (Persistent Storage) or /home/user/app/data
+            potential_data_dirs = [Path("/data"), Path("./data"), Path("/home/user/app/data")]
+            for d in potential_data_dirs:
+                if d.exists() and os.access(str(d), os.W_OK):
+                    # We found a writable data dir
+                    break
         elif Path("/app").exists() and os.environ.get("DOCKER_CONTAINER", "false") == "true":
             platform = 'docker'
             work_dir = Path("/app")
