@@ -84,15 +84,29 @@ class Config:
 
         # HF Spaces persistent storage override
         if platform == 'huggingface':
-            # Priority 1: /data/checkpoints (Official persistent storage)
-            if Path("/data").exists() and os.access("/data", os.W_OK):
-                checkpoints_dir = Path("/data/checkpoints")
-            # Priority 2: local ./checkpoints (If user uploaded them or downloaded them)
+            # Priority 1: Official /data persistent storage
+            if Path("/data").exists():
+                # We check if checkpoints already exist in /data or /data/checkpoints
+                # Check for both .pth (diffusion) and .pt (vae)
+                has_diff = (Path("/data/checkpoints/difflocks_diffusion")).exists() and list((Path("/data/checkpoints/difflocks_diffusion")).glob("scalp_*.pth"))
+                has_vae = (Path("/data/checkpoints/strand_vae")).exists() and list((Path("/data/checkpoints/strand_vae")).glob("*.pt"))
+                
+                if has_diff and has_vae:
+                    checkpoints_dir = Path("/data/checkpoints")
+                elif (Path("/data/difflocks_diffusion")).exists() and list((Path("/data/difflocks_diffusion")).glob("scalp_*.pth")):
+                    checkpoints_dir = Path("/data")
+                else:
+                    # Default for new downloads in /data
+                    checkpoints_dir = Path("/data/checkpoints")
+            # Priority 2: local ./checkpoints
             elif (repo_dir / "checkpoints").exists():
                 checkpoints_dir = repo_dir / "checkpoints"
-            # Priority 3: data_dir / checkpoints (Any other detected persistent storage)
+            # Priority 3: any other detected data dir
             elif 'data_dir' in locals() and data_dir and data_dir.exists():
                 checkpoints_dir = data_dir / "checkpoints"
+            else:
+                # Default to repo_dir / checkpoints
+                checkpoints_dir = repo_dir / "checkpoints"
 
         # Platform-specific checkpoint overrides
         if platform == 'kaggle':

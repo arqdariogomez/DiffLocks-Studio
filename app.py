@@ -326,20 +326,31 @@ from inference.img2hair import DiffLocksInference
 
 def download_checkpoints_hf():
     """Auto-download checkpoints if on HF Spaces and missing."""
-    # Priority 1: Check if checkpoints exist in the config path
-    if cfg.checkpoints_dir.exists() and (cfg.checkpoints_dir / "difflocks_diffusion").exists():
-        print(f"✅ Found checkpoints in: {cfg.checkpoints_dir}")
-        return True
+    # 1. Quick check for existing checkpoints in multiple possible locations
+    search_paths = [
+        cfg.checkpoints_dir,
+        cfg.repo_dir / "checkpoints",
+        Path("/data/checkpoints"),
+        Path("/data"),
+        cfg.repo_dir
+    ]
     
-    # Priority 3: Fallback to /app/checkpoints/checkpoints (if dataset was downloaded with nested folder)
-    nested_path = cfg.checkpoints_dir / "checkpoints"
-    if nested_path.exists() and (nested_path / "difflocks_diffusion").exists():
-        print(f"✅ Found nested checkpoints in: {nested_path}")
-        cfg.checkpoints_dir = nested_path
-        return True
+    for path in search_paths:
+        if path.exists() and (path / "difflocks_diffusion").exists():
+            if list((path / "difflocks_diffusion").glob("scalp_*.pth")):
+                print(f"✅ Found checkpoints in: {path}")
+                cfg.checkpoints_dir = path
+                return True
 
-    # If we are on HF or Docker but detection failed, try to force it if we are not on local
-    # We check for common cloud/container indicators
+    # 2. If not found, check for nested path (checkpoints/checkpoints/...)
+    for path in search_paths:
+        nested = path / "checkpoints"
+        if nested.exists() and (nested / "difflocks_diffusion").exists():
+            print(f"✅ Found nested checkpoints in: {nested}")
+            cfg.checkpoints_dir = nested
+            return True
+
+    # 3. Determine if we should attempt auto-download
     is_cloud = (
         cfg.platform in ['huggingface', 'docker', 'kaggle', 'colab'] or 
         'SPACE_ID' in os.environ or 
@@ -352,92 +363,99 @@ def download_checkpoints_hf():
         print(f"❌ Missing checkpoints! Search path: {cfg.checkpoints_dir}")
         return False
     
-    print(f"🔍 [CLOUD DETECTED] Missing checkpoints at {cfg.checkpoints_dir}. Platform: {cfg.platform}. Attempting auto-download...")
-    ckpt_dir = cfg.checkpoints_dir
-    diffusion_dir = ckpt_dir / "difflocks_diffusion"
-    vae_dir = ckpt_dir / "strand_vae"
+    print(f"🔍 [CLOUD DETECTED] Missing checkpoints. Platform: {cfg.platform}. Attempting auto-download...")
     
-    # Check if we already have the main files
-    if list(diffusion_dir.glob("scalp_*.pth")) and list(vae_dir.glob("strand_codec.pt")):
-        print(f"✅ [HF SPACES] Checkpoints verified in {ckpt_dir}")
-        return True
+    # Determine where to download (Prefer /data for persistence)
+    download_dir = Path("/tmp/hf_download")
+    if Path("/data").exists() and os.access("/data", os.W_OK):
+        download_dir = Path("/data/tmp_download")
+        print(f"💾 Using /data for persistent download")
 
-    print(f"🚀 [HF SPACES] Downloading missing checkpoints to {ckpt_dir}...")
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Try official Meshcapade if credentials available
-    mesh_user = os.environ.get("MESH_USER")
-    mesh_pass = os.environ.get("MESH_PASS")
-    
-    if mesh_user and mesh_pass:
-        print("🔐 [HF SPACES] Using Meshcapade credentials from Environment Variables...")
-        # Use the download_checkpoints.py logic if available
-        try:
-            from download_checkpoints import download_from_meshcapade
-            download_from_meshcapade(mesh_user, mesh_pass, cfg.repo_dir)
-        except Exception as e:
-            print(f"⚠️ [HF SPACES] Meshcapade download helper failed: {e}")
-
-    # Fallback to current HF Repo (will require token if private)
     try:
         from huggingface_hub import snapshot_download
         token = os.environ.get("HF_TOKEN")
         
-        # 1. Download Checkpoints
-        print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")
+        if not token and cfg.platform == 'huggingface':
+            print("⚠️ [HF SPACES] HF_TOKEN not found in environment variables. If the dataset is private, download will fail.")
         
-        # Check if files already exist to avoid redundant download and confusion
-        # We check the repo root for the 'difflocks_diffusion' folder
-        if (cfg.repo_dir / "difflocks_diffusion").exists():
-             print("✅ [DEBUG] Files already detected in repo root. Skipping download.")
-             return True
-
-        snapshot_download(
-            repo_id="arqdariogomez/difflocks-assets-hybrid",
-            repo_type="dataset",
-            allow_patterns=[
-                "difflocks_diffusion/*", "strand_vae/*", "rgb2material/*",
-                "checkpoints/difflocks_diffusion/*", "checkpoints/strand_vae/*", "checkpoints/rgb2material/*"
-            ],
-            local_dir=str(cfg.repo_dir),
-            local_dir_use_symlinks=False,
-            token=token if token else None,
-            ignore_patterns=["*.md", ".git*"]
-        )
-        
-        # 2. Download Assets to inference/
-        print(f"🔹 [HF SPACES] Downloading assets to {cfg.repo_dir / 'inference'}...")
-        snapshot_download(
-            repo_id="arqdariogomez/difflocks-assets-hybrid",
-            repo_type="dataset",
-            allow_patterns=["assets/*", "inference/assets/*"],
-            local_dir=str(cfg.repo_dir),
-            local_dir_use_symlinks=False,
-            token=token if token else None,
-            ignore_patterns=["*.md", ".git*"]
-        )
-        
-        # After download, check if we need to update checkpoints_dir
-        # We look for where 'difflocks_diffusion' actually ended up
-        possible_locations = [
-            cfg.repo_dir,
+        # 1. Quick check for existing checkpoints in multiple possible locations
+        search_paths = [
+            cfg.checkpoints_dir,
             cfg.repo_dir / "checkpoints",
-            cfg.repo_dir / "checkpoints" / "checkpoints", # Handle double nesting if it happened
-            Path("/data"), # HF Persistent storage
-            Path("/data/checkpoints")
+            Path("/data/checkpoints"),
+            Path("/data"),
+            cfg.repo_dir
         ]
         
-        for loc in possible_locations:
-            if (loc / "difflocks_diffusion").exists() and list((loc / "difflocks_diffusion").glob("scalp_*.pth")):
-                cfg.checkpoints_dir = loc
-                print(f"✅ [HF SPACES] Found checkpoints in: {cfg.checkpoints_dir}")
-                break
+        for path in search_paths:
+            if path and path.exists():
+                has_diff = (path / "difflocks_diffusion").exists() and list((path / "difflocks_diffusion").glob("scalp_*.pth"))
+                has_vae = (path / "strand_vae").exists() and list((path / "strand_vae").glob("*.pt"))
+                
+                if has_diff and has_vae:
+                    print(f"✅ [HF SPACES] Checkpoints (Diffusion & VAE) already present at: {path}")
+                    cfg.checkpoints_dir = path
+                    return True
 
-        print("✅ [HF SPACES] All assets downloaded successfully.")
-        return True
+        print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")
+        
+        # Clean temporary download dir
+        if download_dir.exists(): shutil.rmtree(download_dir)
+        download_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Download everything to the download_dir
+        snapshot_download(
+            repo_id="arqdariogomez/difflocks-assets-hybrid",
+            repo_type="dataset",
+            local_dir=str(download_dir),
+            local_dir_use_symlinks=False,
+            token=token if token else None,
+            ignore_patterns=["*.md", ".git*"]
+        )
+        
+        # Destination logic: Prefer /data for persistence
+        if Path("/data").exists() and os.access("/data", os.W_OK):
+            final_target = Path("/data/checkpoints")
+        else:
+            final_target = cfg.repo_dir / "checkpoints"
+            
+        final_target.mkdir(parents=True, exist_ok=True)
+        print(f"🚚 Moving downloaded files to: {final_target}")
+
+        # Search for downloaded folders (they might be nested)
+        found_any = False
+        for folder_name in ["difflocks_diffusion", "strand_vae", "rgb2material", "assets"]:
+            source_folder = None
+            for p in download_dir.rglob(folder_name):
+                if p.is_dir():
+                    source_folder = p
+                    break
+            
+            if source_folder:
+                dest = final_target / folder_name
+                if dest.exists(): shutil.rmtree(dest)
+                shutil.move(str(source_folder), str(final_target))
+                print(f"✅ Moved {folder_name}")
+                found_any = True
+
+        if found_any:
+            cfg.checkpoints_dir = final_target
+            print(f"🎯 [HF SPACES] Setup complete. Checkpoints at: {cfg.checkpoints_dir}")
+            # Clean up
+            if download_dir.exists(): shutil.rmtree(download_dir)
+            return True
+        
+        # Final Emergency Recursive Search
+        for p in download_dir.rglob("scalp_*.pth"):
+            if p.parent.name == "difflocks_diffusion":
+                cfg.checkpoints_dir = final_target
+                shutil.move(str(p.parent.parent), str(final_target))
+                print(f"🎯 Found via emergency recursive search and moved to: {cfg.checkpoints_dir}")
+                return True
+
+        return False
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
-        print("💡 Ensure MESH_USER/MESH_PASS or HF_TOKEN are set in Space Secrets.")
         return False
 
 # Run download check before initializing file lists

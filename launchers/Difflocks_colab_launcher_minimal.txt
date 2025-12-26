@@ -57,9 +57,7 @@ def find_checkpoints_colab():
 # ==============================================================================
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['GLOG_minloglevel'] = '3'
-os.environ['MPLBACKEND'] = 'Agg' # Force non-interactive backend for Colab
-import matplotlib
-matplotlib.use('Agg', force=True)
+
 main_output = widgets.Output()
 display(main_output)
 log_lines = []
@@ -283,44 +281,51 @@ def install():
     show_status(10, "🔧 Applying device compatibility fixes...")
     apply_device_fixes()
 
-    show_status(12, "🧹 Cleaning environment...")
+    show_status(12, "🧹 Deep cleaning binary environment...")
     # Explicitly uninstall to avoid binary conflicts
-    # ADDED: scikit-image and other potential numpy consumers
-    run_cmd("pip uninstall -y numpy scipy pandas matplotlib gradio natten scikit-image opencv-python 2>/dev/null || true")
+    pkgs_to_uninstall = "numpy scipy pandas matplotlib gradio natten scikit-image opencv-python opencv-contrib-python mediapipe"
+    run_cmd(f"pip uninstall -y {pkgs_to_uninstall} 2>/dev/null || true")
     run_cmd("pip cache purge 2>/dev/null || true")
 
-    site_packages = subprocess.run([sys.executable, "-c", "import site; print(site.getsitepackages()[0])"],
-                                   capture_output=True, text=True).stdout.strip()
+    # Get all potential site-packages paths
+    import site
+    site_dirs = site.getsitepackages()
+    if site.getusersitepackages():
+        site_dirs.append(site.getusersitepackages())
     
+    # Also include the common Colab user path mentioned by the user
+    colab_user_path = f"/root/.local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+    if Path(colab_user_path).exists():
+        site_dirs.append(colab_user_path)
+
     # Deep clean of package directories to remove any leftover .so files
-    # ADDED: More extensive list of packages that often cause binary mismatches
     bad_pkgs = [
         "numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", 
-        "matplotlib", "matplotlib.libs", "gradio", "PIL", "cv2", "skimage"
+        "matplotlib", "matplotlib.libs", "gradio", "PIL", "cv2", "skimage", "natten",
+        "pydantic", "pydantic_core", "typing_extensions", "annotated_types"
     ]
-    for pkg in bad_pkgs:
-        pkg_path = Path(site_packages) / pkg
-        if pkg_path.exists():
-            log(f"Removing {pkg_path}...", "info")
-            shutil.rmtree(pkg_path, ignore_errors=True)
-        # Also clean the .dist-info and .egg-info and .so files in the root site-packages
-        for dist in Path(site_packages).glob(f"{pkg}*"):
-            if dist.name.endswith((".dist-info", ".egg-info", ".so", ".pth")):
-                if dist.is_dir():
-                    shutil.rmtree(dist, ignore_errors=True)
-                else:
-                    dist.unlink(missing_ok=True)
     
-    # Also clean the user site packages just in case
-    import site
-    user_site = site.getusersitepackages()
-    if user_site and Path(user_site).exists():
-        shutil.rmtree(user_site, ignore_errors=True)
-
+    for s_dir in set(site_dirs):
+        s_path = Path(s_dir)
+        if not s_path.exists(): continue
+        log(f"Cleaning site-directory: {s_path}", "info")
+        for pkg in bad_pkgs:
+            pkg_path = s_path / pkg
+            if pkg_path.exists():
+                log(f"Removing {pkg_path}...", "info")
+                shutil.rmtree(pkg_path, ignore_errors=True)
+            # Also clean the .dist-info and .egg-info and .so files
+            for dist in s_path.glob(f"{pkg}*"):
+                if dist.name.endswith((".dist-info", ".egg-info", ".so", ".pth")):
+                    if dist.is_dir():
+                        shutil.rmtree(dist, ignore_errors=True)
+                    else:
+                        dist.unlink(missing_ok=True)
+    
     # Clean repo pycache
     run_cmd(f"find {REPO_DIR} -name '__pycache__' -type d -exec rm -rf {{}} + 2>/dev/null || true")
 
-    log("Deep clean finished", "success")
+    log("Deep binary clean finished", "success")
 
     show_status(18, "🔥 Installing Core Stack (NumPy 1.26.4)...")
     # Install numpy first and separately to ensure it's the base
@@ -329,26 +334,19 @@ def install():
     
     show_status(22, "🐼 Installing Pandas & Gradio...")
     # Then install the rest, ensuring they are compatible with NumPy 1.26.4
-    # We install pandas and others in one go to let pip resolve shared deps
     core_deps = ["pandas==2.2.2", "gradio==3.50.2", "matplotlib", "scikit-image", "opencv-python"]
     run_cmd(f"pip install --force-reinstall --no-cache-dir {' '.join(core_deps)}", timeout=300)
 
-    # Force immediate reload and verification of NumPy/Pandas compatibility
-    try:
-        import numpy as np
-        import pandas as pd
-        log(f"Verified: NumPy {np.__version__}, Pandas {pd.__version__}", "success")
-    except Exception as e:
-        log(f"Compatibility test failed: {e}. Attempting recovery...", "warning")
-        run_cmd("pip install --force-reinstall --no-cache-dir numpy==1.26.4 pandas==2.2.2", timeout=200)
+    show_status(30, "🔄 Verification of Core Stack...")
+    np_ver = get_pkg_version_subprocess("numpy")
+    pd_ver = get_pkg_version_subprocess("pandas")
+    if np_ver and pd_ver:
+        log(f"Verified via Subprocess: NumPy {np_ver}, Pandas {pd_ver}", "success")
+    else:
+        log("Verification via subprocess failed, but proceeding...", "warning")
 
     show_status(35, "🔬 Installing SciPy 1.13.1...")
     run_cmd(f"pip install --no-cache-dir scipy==1.13.1", timeout=300)
-    
-    # Critical: Force reload of numpy to avoid 'dtype size changed' error
-    import importlib
-    import numpy
-    importlib.reload(numpy)
     
     log(f"SciPy: {get_pkg_version_subprocess('scipy')}", "success")
     
@@ -543,68 +541,100 @@ def main():
         run_cmd("pip install --no-cache-dir numpy==1.26.4", timeout=120)
         run_cmd(f"pip install --no-cache-dir -c {CONSTRAINTS_FILE} scipy==1.13.1", timeout=300)
 
-    show_status(98, "🚀 Launching...")
+    show_status(98, "🚀 Launching via Process Isolation...")
     
-    # Add REPO_DIR to sys.path
-    if str(REPO_DIR) not in sys.path:
-        sys.path.insert(0, str(REPO_DIR))
-    
-    # Import the demo from app.py
-    try:
-        os.chdir(REPO_DIR)
-        # Clear cache to avoid import issues
-        for m in list(sys.modules.keys()):
-            if m.startswith('app') or m.startswith('inference'):
-                del sys.modules[m]
-        
-        from app import demo
-        
-        # Render final status
-        show_status(100, "🚀 Starting Gradio Interface...", "success")
-        log("Launching app.py logic...", "success")
-        
-        # Limpiar consola antes de lanzar para una UI más limpia
-        from IPython.display import clear_output
-        import contextlib
-        import io
+    # 1. Create the Runner Script (Isolated process)
+    runner_content = f'''
+import sys
+import os
+from pathlib import Path
 
-        clear_output(wait=True)
-        
-        # Launch the demo with output suppression to avoid showing Gradio boilerplate
-        # app.py handles the platform-specific launch_kwargs via __main__
-        # but since we are importing it, we call launch here with the right parameters for Colab
-        
-        # We wrap the launch in a way that if it fails early, we see the error
-        try:
-            # We suppress stdout/stderr to hide the Gradio boilerplate
-            f = io.StringIO()
-            with contextlib.redirect_stdout(f):
-                with contextlib.redirect_stderr(f):
-                    # In Gradio 3.x, launch() returns (app, local_url, share_url)
-                    _, _, share_url = demo.queue().launch(
-                        share=True, 
-                        inline=True, 
-                        height=1000, 
-                        quiet=True,
-                        show_api=False,
-                        show_tips=False
-                    )
+# Add REPO_DIR to sys.path
+REPO_DIR = Path("{REPO_DIR}")
+if str(REPO_DIR) not in sys.path:
+    sys.path.insert(0, str(REPO_DIR))
+
+os.chdir(REPO_DIR)
+
+# Force non-interactive backend
+import matplotlib
+matplotlib.use('Agg', force=True)
+
+# Silence logs
+import logging
+for name in ["natten", "gradio", "matplotlib", "PIL", "mediapipe"]:
+    logging.getLogger(name).setLevel(logging.CRITICAL)
+
+print("🔄 Isolated process: Loading DiffLocks Studio...", flush=True)
+
+try:
+    from app import demo
+    print("✅ App imported successfully", flush=True)
+    
+    # Launch Gradio with public share link
+    demo.queue().launch(
+        share=True, 
+        inline=True, 
+        height=1000, 
+        quiet=False,
+        show_api=False,
+        show_tips=False
+    )
+except Exception as e:
+    import traceback
+    print(f"❌ Runner Error: {{e}}", flush=True)
+    print(traceback.format_exc(), flush=True)
+    sys.exit(1)
+'''
+    APP_SCRIPT.write_text(runner_content)
+    log("Runner script created for isolation", "success")
+
+    # 2. Launch the runner as a subprocess
+    process = subprocess.Popen(
+        [sys.executable, "-u", str(APP_SCRIPT)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+
+    gradio_url = None
+    
+    # 3. Monitor output for the Gradio URL
+    log("Monitoring for Gradio URL...", "info")
+    
+    def monitor_output():
+        nonlocal gradio_url
+        for line in iter(process.stdout.readline, ''):
+            line = line.strip()
+            if not line: continue
             
-            if share_url:
-                log(f"Gradio Public URL: {share_url}", "success")
-                # Show the beautiful URL frame if we are in Colab
-                if share_url and 'COLAB_GPU' in os.environ:
-                    show_gradio_frame(share_url)
-                    
-        except Exception as launch_err:
-            log(f"Gradio Launch Error: {launch_err}", "error")
-            raise launch_err
-        
-    except Exception as e:
-        show_status(0, f"❌ Launch Error: {e}", "error")
-        import traceback
-        log(traceback.format_exc(), "error")
-        raise
+            # Print important status from subprocess to main logs
+            if any(x in line for x in ['✅', '❌', '🔄', 'Running on public URL:']):
+                log(f"[App] {line}", "info")
+            
+            # Detect Public URL
+            if "Running on public URL:" in line:
+                url_match = re.search(r'https://[a-zA-Z0-9-]+\.gradio\.live', line)
+                if url_match:
+                    gradio_url = url_match.group(0)
+                    log(f"Detected Gradio URL: {gradio_url}", "success")
+                    show_gradio_frame(gradio_url)
+            
+            if "❌" in line or "Error" in line:
+                log(f"Subprocess Error: {line}", "error")
+
+    # Start monitoring in a separate thread so it doesn't block
+    thread = threading.Thread(target=monitor_output)
+    thread.daemon = True
+    thread.start()
+
+    # 4. Wait for the process (keep cell alive)
+    try:
+        process.wait()
+    except KeyboardInterrupt:
+        log("Interrupted by user, stopping app...", "warning")
+        process.terminate()
 
 try:
     main()
