@@ -321,6 +321,35 @@ def create_error_html(error_msg):
 # --- 5. MODEL LOADER ---
 from inference.img2hair import DiffLocksInference
 
+def download_checkpoints_hf():
+    """Auto-download checkpoints if on HF Spaces and missing."""
+    if cfg.platform != 'huggingface': return
+    
+    ckpt_dir = cfg.checkpoints_dir
+    diffusion_dir = ckpt_dir / "difflocks_diffusion"
+    vae_dir = ckpt_dir / "strand_vae"
+    
+    # Check if we already have the main files
+    if list(diffusion_dir.glob("scalp_*.pth")) and list(vae_dir.glob("strand_codec.pt")):
+        return
+
+    print("🚀 [HF SPACES] Downloading missing checkpoints from Hub...")
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id="arqdariogomez/difflocks-env",
+            repo_type="dataset",
+            allow_patterns=["checkpoints/*", "configs/*"],
+            local_dir=str(cfg.repo_dir),
+            local_dir_use_symlinks=False
+        )
+        print("✅ [HF SPACES] Checkpoints downloaded successfully.")
+    except Exception as e:
+        print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
+
+# Run download check before initializing file lists
+download_checkpoints_hf()
+
 # Search for checkpoints in unified paths
 checkpoints_dir = cfg.checkpoints_dir
 ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
@@ -349,7 +378,12 @@ def load_model():
     if model is not None: return
 
     if not ckpt_files or not vae_files:
-        raise FileNotFoundError("Missing checkpoints!")
+        # Re-check files after download attempt just in case
+        ckpt_files = list((checkpoints_dir / "difflocks_diffusion").glob("scalp_*.pth"))
+        vae_files = list((checkpoints_dir / "strand_vae").glob("strand_codec.pt"))
+        
+        if not ckpt_files or not vae_files:
+            raise FileNotFoundError(f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}")
     
     print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
     model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
