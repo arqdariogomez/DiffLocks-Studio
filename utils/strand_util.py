@@ -357,7 +357,7 @@ def diff_spline(hair_data_dict, nr_verts_per_strand=256):
     # print('t:',times)
     coeffs = natural_cubic_spline_coeffs(times, points)
     spline = NaturalCubicSpline(coeffs)
-    time_pts = torch.arange(nr_verts_per_strand) / (nr_verts_per_strand - 1)
+    time_pts = torch.arange(nr_verts_per_strand, device=points.device) / (nr_verts_per_strand - 1)
     # print(time_pts)
     time_pts = time_pts.repeat(points.shape[0], 1)
 

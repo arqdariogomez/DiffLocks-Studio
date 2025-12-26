@@ -637,7 +637,7 @@ def export_blender(npz_path, job_dir, formats, log_capture):
 
 # --- 7. MAIN INFERENCE FUNCTION ---
 
-def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
+def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()):
     log_capture = VerboseLogCapture()
     log_capture.start()
     tracker = ProgressTracker(is_cpu=IS_CPU)
@@ -789,6 +789,12 @@ def run_inference(image, cfg_scale, export_formats, progress=gr.Progress()):
         yield { status_html: create_error_html(str(e)), debug_console: render_debug_console(log_capture.get_logs()), generate_btn: gr.update(interactive=True) }
     finally:
         log_capture.stop()
+
+# Wrapper for HuggingFace ZeroGPU if available
+if HAS_ZEROGPU:
+    run_inference = spaces.GPU(run_inference_logic)
+else:
+    run_inference = run_inference_logic
 
 # --- 8. GRADIO UI ---
 
@@ -1020,4 +1026,16 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
     )
 
 if __name__ == "__main__":
-    demo.queue().launch(share=cfg.needs_share, server_name="0.0.0.0", server_port=7860)
+    # Launch parameters optimized for different platforms
+    launch_kwargs = {
+        "server_name": "0.0.0.0",
+        "server_port": 7860,
+        "share": cfg.needs_share
+    }
+    
+    # Notebook specific settings
+    if cfg.platform in ['kaggle', 'colab']:
+        launch_kwargs["inline"] = True
+        launch_kwargs["height"] = 1000
+    
+    demo.queue().launch(**launch_kwargs)

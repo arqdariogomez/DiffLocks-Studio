@@ -1,3 +1,14 @@
+---
+title: DiffLocks Studio
+emoji: 💇‍♀️
+colorFrom: pink
+colorTo: gray
+sdk: gradio
+sdk_version: "3.50.2"
+app_file: app.py
+pinned: false
+---
+
 # 💇‍♀️ DiffLocks Studio
 
 High-fidelity 3D hair generation from a single image. This repository is an optimized fork designed for cross-platform reproducibility and performance.

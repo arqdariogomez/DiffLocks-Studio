@@ -29,13 +29,13 @@ class Config:
         if Path("/kaggle").exists():
             platform = 'kaggle'
             work_dir = Path("/kaggle/working")
-            repo_dir = work_dir / "difflocks"
+            repo_dir = work_dir / "DiffLocks-Studio"
             blender_exe = work_dir / "blender/blender"
             needs_share = True
         elif 'COLAB_GPU' in os.environ or Path("/content").exists():
             platform = 'colab'
             work_dir = Path("/content")
-            repo_dir = work_dir / "difflocks"
+            repo_dir = work_dir / "DiffLocks-Studio"
             blender_exe = work_dir / "blender/blender"
             needs_share = True
         elif 'SPACE_ID' in os.environ: 
