@@ -349,15 +349,30 @@ def download_checkpoints_hf():
     try:
         from huggingface_hub import snapshot_download
         token = os.environ.get("HF_TOKEN")
+        
+        # 1. Download Checkpoints to checkpoints_dir
+        print("🔹 [HF SPACES] Downloading models...")
         snapshot_download(
             repo_id="arqdariogomez/difflocks-assets-hybrid",
             repo_type="dataset",
-            allow_patterns=["checkpoints/*", "assets/*"],
-            local_dir=str(cfg.repo_dir),
+            allow_patterns=["difflocks_diffusion/*", "strand_vae/*", "rgb2material/*"],
+            local_dir=str(cfg.checkpoints_dir),
             local_dir_use_symlinks=False,
             token=token if token else None
         )
-        print("✅ [HF SPACES] Checkpoints downloaded successfully.")
+        
+        # 2. Download Assets to inference/
+        print("🔹 [HF SPACES] Downloading assets...")
+        snapshot_download(
+            repo_id="arqdariogomez/difflocks-assets-hybrid",
+            repo_type="dataset",
+            allow_patterns=["assets/*"],
+            local_dir=str(cfg.repo_dir / "inference"),
+            local_dir_use_symlinks=False,
+            token=token if token else None
+        )
+        
+        print("✅ [HF SPACES] All assets downloaded successfully.")
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
         print("💡 Ensure MESH_USER/MESH_PASS or HF_TOKEN are set in Space Secrets.")
