@@ -323,7 +323,22 @@ from inference.img2hair import DiffLocksInference
 
 def download_checkpoints_hf():
     """Auto-download checkpoints if on HF Spaces and missing."""
-    if cfg.platform != 'huggingface': return
+    # Priority 1: Check if checkpoints exist in the config path
+    if cfg.checkpoints_dir.exists() and (cfg.checkpoints_dir / "difflocks_diffusion").exists():
+        print(f"✅ Found checkpoints in: {cfg.checkpoints_dir}")
+        return True
+    
+    # Priority 2: Fallback to local 'checkpoints' directory in repo
+    local_path = Path("./checkpoints")
+    if local_path.exists() and (local_path / "difflocks_diffusion").exists():
+        print(f"✅ Found checkpoints in local repo: {local_path.absolute()}")
+        # Update config dynamically
+        cfg.checkpoints_dir = local_path
+        return True
+
+    if cfg.platform != 'huggingface': 
+        print(f"❌ Missing checkpoints! Search path: {cfg.checkpoints_dir}")
+        return False
     
     ckpt_dir = cfg.checkpoints_dir
     diffusion_dir = ckpt_dir / "difflocks_diffusion"
@@ -331,7 +346,7 @@ def download_checkpoints_hf():
     
     # Check if we already have the main files
     if list(diffusion_dir.glob("scalp_*.pth")) and list(vae_dir.glob("strand_codec.pt")):
-        return
+        return True
 
     print(f"🚀 [HF SPACES] Downloading missing checkpoints to {ckpt_dir}...")
     ckpt_dir.mkdir(parents=True, exist_ok=True)
