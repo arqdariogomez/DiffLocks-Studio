@@ -283,6 +283,7 @@ def install():
     site_packages = subprocess.run([sys.executable, "-c", "import site; print(site.getsitepackages()[0])"],
                                    capture_output=True, text=True).stdout.strip()
     # Deep clean of package directories to remove any leftover .so files
+    # ADDED: pandas and pandas.libs to deep clean
     for pkg in ["numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", "matplotlib", "matplotlib.libs", "gradio"]:
         pkg_path = Path(site_packages) / pkg
         if pkg_path.exists():
@@ -295,9 +296,19 @@ def install():
     # Install numpy first and separately to ensure it's the base
     run_cmd("pip install --no-cache-dir numpy==1.26.4", timeout=120)
     
+    show_status(22, "🐼 Installing Pandas & Gradio...")
     # Then install the rest, ensuring they are compatible
-    core_deps = ["pandas==2.2.2", "matplotlib", "gradio==3.50.2"]
+    core_deps = ["pandas==2.2.2", "gradio==3.50.2", "matplotlib"]
     run_cmd(f"pip install --no-cache-dir {' '.join(core_deps)}", timeout=300)
+
+    # Force immediate reload and verification of NumPy/Pandas compatibility
+    try:
+        import numpy as np
+        import pandas as pd
+        log(f"Verified: NumPy {np.__version__}, Pandas {pd.__version__}", "success")
+    except Exception as e:
+        log(f"Compatibility test failed: {e}. Attempting recovery...", "warning")
+        run_cmd("pip install --force-reinstall --no-cache-dir numpy==1.26.4 pandas==2.2.2", timeout=200)
 
     show_status(35, "🔬 Installing SciPy 1.13.1...")
     run_cmd(f"pip install --no-cache-dir scipy==1.13.1", timeout=300)

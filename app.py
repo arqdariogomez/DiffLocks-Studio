@@ -713,6 +713,19 @@ def export_blender(npz_path, job_dir, formats, log_capture):
 
 # --- 7. MAIN INFERENCE FUNCTION ---
 
+def force_sync_github():
+    try:
+        import subprocess
+        print("🔄 Forcing sync with GitHub...")
+        subprocess.run(["git", "fetch", "--all"], check=True)
+        subprocess.run(["git", "reset", "--hard", "origin/main"], check=True)
+        print("✅ Sync complete! Restarting...")
+        # In HF Spaces, this will trigger a restart if the app is managed by a process that watches for changes
+        # or we can just exit and let the container restart
+        os._exit(0)
+    except Exception as e:
+        return f"❌ Sync failed: {e}"
+
 def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()):
     log_capture = VerboseLogCapture()
     log_capture.start()
@@ -1042,14 +1055,17 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
 
     # --- 8.2. HEADER ---
     with gr.Row():
-        with gr.Column(scale=8):
+        with gr.Column(scale=7):
             gr.Markdown(f"""
                 # 💇‍♀️ DiffLocks Studio
                 ### High-fidelity 3D hair generation from a single image.
                 *Platform: **{cfg.platform.upper()}** | Device: **{DEVICE}** | Precision: **float32***
             """)
-        with gr.Column(scale=1):
-            gr.Markdown(f"<div style='text-align: right; color: #71717a; font-size: 12px;'>v1.0.0-optimized</div>")
+        with gr.Column(scale=2):
+            if cfg.platform == 'huggingface':
+                sync_btn = gr.Button("🔄 Sync GitHub", variant="secondary", size="sm")
+                sync_btn.click(fn=force_sync_github)
+            gr.Markdown(f"<div style='text-align: right; color: #71717a; font-size: 12px;'>v1.0.1-optimized</div>")
 
     # --- 8.3. MAIN INTERFACE ---
     with gr.Row(equal_height=False):
