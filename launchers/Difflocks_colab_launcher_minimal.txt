@@ -76,7 +76,7 @@ def setup_drive():
 
     try:
         from google.colab import drive
-        log("Solicitando acceso a Google Drive... Revisa la ventana emergente.", "info")
+        log("Solicitando acceso a Google Drive... (Si la ventana no aparece, usa el icono de carpeta a la izquierda)", "info")
         # Intentamos montaje estándar sin force_remount primero, que es más estable
         drive.mount('/content/drive')
         
@@ -97,17 +97,42 @@ def setup_drive():
 
 def install_dependencies():
     log("Instalando dependencias (esto puede tardar unos minutos)...", "info")
-    # Forzamos versiones estables para evitar conflictos de NumPy 2.x
-    cmds = [
-        "pip install --upgrade pip",
-        "pip install numpy==1.26.4",
-        "pip install torch==2.4.0+cu121 torchvision==0.19.0+cu121 --extra-index-url https://download.pytorch.org/whl/cu121",
-        "pip install -r requirements.txt",
-        "pip install gradio==4.44.1 pydantic==2.9.2",
-        "pip install moviepy==1.0.3"
-    ]
-    for cmd in cmds:
-        subprocess.run(cmd.split(), cwd=REPO_DIR if os.path.exists(REPO_DIR) else None, check=True)
+    
+    # 1. Actualizar pip y herramientas base
+    subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], check=True)
+    
+    # 2. Instalar Torch con CUDA específico (Crucial para Colab)
+    log("Instalando PyTorch optimizado para CUDA...", "info")
+    subprocess.run([
+        sys.executable, "-m", "pip", "install", 
+        "torch==2.4.0+cu121", "torchvision==0.19.0+cu121", 
+        "--extra-index-url", "https://download.pytorch.org/whl/cu121"
+    ], check=True)
+
+    # 3. Instalar requirements.txt omitiendo torch para evitar conflictos
+    log("Procesando requirements.txt...", "info")
+    try:
+        # Usamos --no-deps para los paquetes de requirements y luego resolvemos
+        # o simplemente ignoramos los que ya instalamos
+        subprocess.run([
+            sys.executable, "-m", "pip", "install", 
+            "-r", "requirements.txt", 
+            "--ignore-installed", "torch", "torchvision"
+        ], cwd=REPO_DIR, check=True)
+    except Exception as e:
+        log(f"Aviso: Fallo parcial en requirements.txt, intentando instalación forzada de críticos...", "warn")
+        # Si falla el archivo completo, instalamos los más importantes manualmente
+        criticos = [
+            "natten==0.17.1+torch240cu121 --find-links https://shi-labs.com/natten/wheels/",
+            "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3", "einops", "transformers", 
+            "accelerate", "safetensors", "scipy", "pandas", "trimesh", "libigl", "mediapipe"
+        ]
+        for pkg in criticos:
+            subprocess.run(f"{sys.executable} -m pip install {pkg}".split(), check=False)
+
+    # 4. Asegurar versiones de UI y parches
+    log("Finalizando configuración de entorno...", "info")
+    subprocess.run([sys.executable, "-m", "pip", "install", "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3"], check=True)
 
 def apply_device_fixes():
     """Aplica parches de código para compatibilidad de dispositivos"""
