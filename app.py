@@ -856,7 +856,7 @@ def export_blender(npz_path, job_dir, formats, log_capture):
     try:
         # Use encoding='utf-8' and errors='replace' to avoid UnicodeDecodeError on Windows
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
-        stdout, stderr = process.communicate(timeout=300)
+        stdout, stderr = process.communicate(timeout=1200) # Increased timeout for heavy Blender exports (20 min)
         if stdout:
             for line in stdout.strip().split('\n')[-10:]:
                 if line.strip(): log_capture.add_log(f"[Blender] {line.strip()}")

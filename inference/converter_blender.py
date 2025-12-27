@@ -54,43 +54,48 @@ try:
     points_4d[:, :3] = flat_pos
     points_4d[:, 3] = 1.0
 
-    # CURVE
-    curve_data = bpy.data.curves.new(name="Hair", type='CURVE')
-    curve_data.dimensions = '3D'
+    # --- HAIR CREATION (Optimized for Blender 3.3+) ---
+    print(f"🧬 Creating {num_strands} strands...")
     
-    # --- CURVE SETTINGS (Legacy for compatibility) ---
-    curve_data.fill_mode = 'FULL'
-    curve_data.bevel_depth = 0.0001 # Give it some thickness for export
-    curve_data.bevel_resolution = 0
+    # Check if we can use the new Curves object (much faster for 100k+ strands)
+    use_new_curves = hasattr(bpy.data, "curves") and float(bpy.app.version_string[:3]) >= 3.3
     
-    for i in range(num_strands):
-        s = curve_data.splines.new('POLY') 
-        s.points.add(pts_per_strand - 1)
-        start = i * pts_per_strand
-        end = start + pts_per_strand
-        s.points.foreach_set('co', points_4d[start:end].ravel())
+    if use_new_curves:
+        print("🚀 Using modern CURVES object (Geometry Nodes compatible)")
+        curve_data = bpy.data.curves.new(name="Hair", type='CURVES')
+        # Batch add curves and points
+        curve_data.curves.add(num_strands)
+        curve_data.points.add(num_strands * pts_per_strand)
         
-    obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
+        # Set point positions in one go
+        curve_data.points.foreach_set('position', flat_pos.ravel())
+        
+        # Set curve offsets (which points belong to which curve)
+        # Each curve has pts_per_strand points
+        offsets = np.arange(0, (num_strands + 1) * pts_per_strand, pts_per_strand, dtype=np.int32)
+        curve_data.curve_offsets.foreach_set(offsets)
+        
+        obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
+    else:
+        print("⚠️ Using legacy CURVE object (Slower for high strand counts)")
+        curve_data = bpy.data.curves.new(name="Hair", type='CURVE')
+        curve_data.dimensions = '3D'
+        curve_data.fill_mode = 'FULL'
+        curve_data.bevel_depth = 0.0 # No bevel for speed unless requested
+        
+        for i in range(num_strands):
+            s = curve_data.splines.new('POLY') 
+            s.points.add(pts_per_strand - 1)
+            start = i * pts_per_strand
+            end = start + pts_per_strand
+            s.points.foreach_set('co', points_4d[start:end].ravel())
+            
+        obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
+
     bpy.context.collection.objects.link(obj)
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
-    # CONVERT TO GEOMETRY (Optional: New Curves system in Blender 3.3+)
-    # We try to convert but if it fails or if we are in a version that handles ABC poorly, we stay legacy
-    is_new_curves = False
-    try:
-        # Only convert to new CURVES if we're not explicitly asked for legacy compatibility in ABC
-        # For now, let's keep it legacy for better ABC/USD support across platforms
-        # bpy.ops.object.convert(target='CURVES', keep_original=False)
-        # is_new_curves = True
-        # print("✨ Converted to new CURVES system")
-        print("ℹ️ Keeping as legacy CURVE for maximum compatibility with ABC/USD")
-    except:
-        print("⚠️ Conversion to CURVES failed, keeping as legacy CURVE")
-    
-    obj = bpy.context.active_object
-    obj.select_set(True)
-    
     # MATERIAL
     mat = create_material()
     if obj.data.materials: obj.data.materials[0] = mat
@@ -100,18 +105,17 @@ try:
     dg = bpy.context.evaluated_depsgraph_get()
     dg.update()
     
-    def verify_and_retry_abc(filepath):
-        if not os.path.exists(filepath) or os.path.getsize(filepath) < 5000: # Increased threshold
-            print(f"⚠️ {filepath} is missing or too small ({os.path.getsize(filepath) if os.path.exists(filepath) else 0} bytes).")
+    def verify_and_retry_abc(filepath, is_new_curves):
+        if not os.path.exists(filepath) or os.path.getsize(filepath) < 5000: 
+            print(f"⚠️ {filepath} is missing or too small. Retrying with alternative settings...")
             
-            # TRY 1: Export without export_hair (treat as mesh/curve)
-            print("🔄 Retry 1: Exporting without 'export_hair'...")
+            # TRY 1: Toggle export_hair
             try:
                 bpy.ops.wm.alembic_export(
                     filepath=filepath, 
                     selected=True, 
                     start=1, end=1,
-                    export_hair=False,
+                    export_hair=not is_new_curves, # Try the opposite of what we tried first
                     export_particles=False,
                     as_background_job=False
                 )
@@ -121,6 +125,8 @@ try:
             if not os.path.exists(filepath) or os.path.getsize(filepath) < 5000:
                 print("🔄 Retry 2: Converting to MESH for export...")
                 try:
+                    # For new CURVES, we might need to convert to legacy curve first then mesh, 
+                    # or just mesh. bpy.ops.object.convert handles it.
                     bpy.ops.object.convert(target='MESH')
                     bpy.ops.wm.alembic_export(
                         filepath=filepath, 
@@ -141,14 +147,13 @@ try:
         out = f"{output_base}.abc"
         print(f"📦 Exporting Alembic: {out}")
         try:
-            # For legacy CURVE objects with bevel, we want standard curve export.
-            # 'export_hair' in Blender Alembic refers to Particle Systems.
-            # 'curves' refers to Curve objects.
+            # For new CURVES system, export_hair=True is often required.
+            # For legacy CURVE, export_hair=False (it's a curve object).
             bpy.ops.wm.alembic_export(
                 filepath=out, 
                 selected=True, 
                 start=1, end=1,
-                export_hair=False, # We use actual Curve objects, not Particles
+                export_hair=use_new_curves, 
                 export_particles=False,
                 as_background_job=False,
                 evaluation_mode='VIEWPORT'
@@ -156,7 +161,7 @@ try:
         except:
             pass
             
-        verify_and_retry_abc(out)
+        verify_and_retry_abc(out, use_new_curves)
         if os.path.exists(out) and os.path.getsize(out) > 5000:
             print(f"✅ Exported ABC: {out} ({os.path.getsize(out)} bytes)")
         else:
@@ -166,17 +171,18 @@ try:
         out = f"{output_base}.usd"
         print(f"📦 Exporting USD: {out}")
         try:
+            # USD exporter usually handles new Curves and legacy Curves well with export_hair=True
             bpy.ops.wm.usd_export(
                 filepath=out, 
                 selected_objects_only=True,
-                export_hair=True,
+                export_hair=True, 
                 evaluation_mode='VIEWPORT'
             )
         except:
             pass
             
         if not os.path.exists(out) or os.path.getsize(out) < 5000:
-            print(f"⚠️ USD too small. Retrying as mesh...")
+            print(f"⚠️ USD too small. Retrying with mesh conversion...")
             try:
                 bpy.ops.object.convert(target='MESH')
                 bpy.ops.wm.usd_export(filepath=out, selected_objects_only=True)
