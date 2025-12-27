@@ -318,7 +318,27 @@ def main():
                 print("✅ Checkpoints extracted from local zip!")
                 return True
 
-    # 3. Try Meshcapade login if credentials provided
+    # 3. Try private HF repo if specified (Alternative to Google Drive for HF/Colab)
+    hf_ckpt_repo = os.environ.get("HF_CHECKPOINTS_REPO")
+    if hf_ckpt_repo:
+        print(f"🔹 Attempting to download checkpoints from private HF repo: {hf_ckpt_repo}")
+        try:
+            from huggingface_hub import snapshot_download
+            snapshot_download(
+                repo_id=hf_ckpt_repo,
+                repo_type="dataset",
+                local_dir=str(checkpoints_dir),
+                token=token
+            )
+            # Re-verify after download
+            if (list(checkpoints_dir.rglob("scalp_*.pth")) or list(checkpoints_dir.rglob("*.ckpt"))) and \
+               (list(checkpoints_dir.rglob("strand_codec.pt")) or list(checkpoints_dir.rglob("*.pt"))):
+                print("✅ Checkpoints downloaded from private HF repo!")
+                return True
+        except Exception as e:
+            print(f"⚠️ Error downloading from HF repo {hf_ckpt_repo}: {e}")
+
+    # 4. Try Meshcapade login if credentials provided
     user = os.environ.get("MESH_USER")
     password = os.environ.get("MESH_PASS")
     
@@ -327,7 +347,7 @@ def main():
             print("✅ Download from Meshcapade successful!")
             return True
     
-    # 4. Fallback: Try official MPG link or direct download URL if provided
+    # 5. Fallback: Try official MPG link or direct download URL if provided
     mpg_url = "https://download.is.tue.mpg.de/download.php?domain=difflocks&sfile=difflocks_checkpoints.zip"
     direct_url = os.environ.get("CHECKPOINTS_URL") or os.environ.get("MESH_DOWNLOAD_URL") or mpg_url
     
