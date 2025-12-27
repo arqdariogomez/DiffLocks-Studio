@@ -3,7 +3,40 @@ import sys
 import shutil
 import argparse
 import requests
+import zipfile
 from pathlib import Path
+
+def unzip_checkpoints(zip_path, target_dir):
+    """Unzips the checkpoints and organizes them into the target directory."""
+    print(f"📦 Extracting {zip_path.name} to {target_dir}...")
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Create a temporary extraction directory
+            temp_extract = target_dir / "temp_unzip"
+            if temp_extract.exists(): shutil.rmtree(temp_extract)
+            temp_extract.mkdir(parents=True, exist_ok=True)
+            
+            zip_ref.extractall(temp_extract)
+            
+            # Look for the relevant folders (difflocks_diffusion, strand_vae)
+            # They might be at the root of the zip or nested
+            found_folders = False
+            for folder_name in ["difflocks_diffusion", "strand_vae"]:
+                # Search for this folder in the extracted content
+                matches = list(temp_extract.rglob(folder_name))
+                if matches:
+                    source_folder = matches[0]
+                    dest_folder = target_dir / folder_name
+                    if dest_folder.exists(): shutil.rmtree(dest_folder)
+                    shutil.move(str(source_folder), str(dest_folder))
+                    print(f"✅ Moved {folder_name} to {dest_folder}")
+                    found_folders = True
+            
+            shutil.rmtree(temp_extract)
+            return found_folders
+    except Exception as e:
+        print(f"❌ Error unzipping {zip_path.name}: {e}")
+        return False
 
 def download_from_meshcapade(user, password, checkpoints_dir):
     """
@@ -236,34 +269,77 @@ def main():
         checkpoints_dir,
         cfg.repo_dir / "checkpoints",
         Path("/data/checkpoints") if Path("/data").exists() else None,
-        Path("/app/checkpoints") if Path("/app").exists() else None
+        Path("/app/checkpoints") if Path("/app").exists() else None,
+        Path("/kaggle/input/difflocks-checkpoints") if Path("/kaggle").exists() else None
     ]
     search_dirs = [d for d in search_dirs if d and d.exists()]
     
     found_ckpt = False
     for d in search_dirs:
-        if list(d.rglob("scalp_*.pth")) and (list(d.rglob("strand_codec.pt")) or list(d.rglob("*.pt"))):
+        # Check if we have the diffusion weights and the VAE/Codec
+        if (list(d.rglob("scalp_*.pth")) or list(d.rglob("*.ckpt"))) and \
+           (list(d.rglob("strand_codec.pt")) or list(d.rglob("*.pt"))):
             found_ckpt = True
+            print(f"✅ Checkpoints found in: {d}")
             break
             
     if found_ckpt:
-        print("✅ Checkpoints already present.")
         return True
+
+    # 2.5 Check for local zip file (difflocks_checkpoints.zip)
+    # This is common in Pinokio or manual setups
+    potential_zips = [
+        cfg.repo_dir / "difflocks_checkpoints.zip",
+        cfg.repo_dir / "checkpoints.zip",
+        Path("/kaggle/input/difflocks-checkpoints/difflocks_checkpoints.zip") if Path("/kaggle").exists() else None
+    ]
+    
+    for zip_p in potential_zips:
+        if zip_p and zip_p.exists():
+            print(f"📦 Found local zip: {zip_p}")
+            if unzip_checkpoints(zip_p, checkpoints_dir):
+                print("✅ Checkpoints extracted from local zip!")
+                return True
 
     # 3. Try Meshcapade login if credentials provided
     user = os.environ.get("MESH_USER")
     password = os.environ.get("MESH_PASS")
+    
     if user and password:
         if download_from_meshcapade(user, password, checkpoints_dir):
             print("✅ Download from Meshcapade successful!")
             return True
+    
+    # 4. Fallback: Try a direct download URL if provided
+    # The user can provide a direct link to the zip (e.g. from their own drive or bucket)
+    direct_url = os.environ.get("CHECKPOINTS_URL") or os.environ.get("MESH_DOWNLOAD_URL")
+    if direct_url:
+        print(f"🚀 Attempting direct download from: {direct_url}")
+        try:
+            zip_path = checkpoints_dir / "downloaded_checkpoints.zip"
+            r = requests.get(direct_url, stream=True, timeout=300)
+            if r.status_code == 200:
+                with open(zip_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                if unzip_checkpoints(zip_path, checkpoints_dir):
+                    os.remove(zip_path)
+                    return True
+            else:
+                print(f"❌ Direct download failed (Status: {r.status_code})")
+        except Exception as e:
+            print(f"⚠️ Error during direct download: {e}")
 
     print("\n❌ [REQUIRED] Checkpoints missing!")
-    print("💡 Meshcapade prohibits redistribution. Please:")
-    print("1. Login to https://meshcapade.com/models")
-    print("2. Download DiffLocks checkpoints.")
-    print(f"3. Place them in: {checkpoints_dir.absolute()}")
-    print("\nOr set MESH_USER and MESH_PASS in your Secrets/Environment for automated attempt.")
+    print("💡 Due to licensing (Non-Commercial), you must provide the model weights.")
+    print("Methods to fix this:")
+    print("1. [Manual] Download 'difflocks_checkpoints.zip' from https://difflocks.is.tue.mpg.de/")
+    print(f"   and place it in: {cfg.repo_dir.absolute()}")
+    print("2. [Secrets] Set MESH_USER and MESH_PASS for automated download from Meshcapade.")
+    print("3. [Direct] Set CHECKPOINTS_URL to a direct download link of the zip file.")
+    
+    if cfg.platform == 'hf':
+        print("\n🤗 On Hugging Face Spaces, the best way is to set CHECKPOINTS_URL in your Space Secrets.")
     
     return False
 
