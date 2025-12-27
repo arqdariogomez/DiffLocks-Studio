@@ -1038,7 +1038,9 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         
         # Ensure we return 100% and show all results
         final_status = create_complete_html()
-        final_downloads = [str(f) for f in [obj_path] + [Path(p) for p in blender_outputs if p] if f and Path(f).exists()]
+        
+        # Include .npz in final downloads as requested by user
+        final_downloads = [str(f) for f in [obj_path, npz_path] + [Path(p) for p in blender_outputs if p] if f and Path(f).exists()]
         
         # Final result yield
         yield {

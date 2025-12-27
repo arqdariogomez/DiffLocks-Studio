@@ -69,15 +69,24 @@ try:
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
-    # CONVERT TO GEOMETRY
-    bpy.ops.object.convert(target='CURVES', keep_original=False)
+    # CONVERT TO GEOMETRY (New Curves system in Blender 3.3+)
+    try:
+        bpy.ops.object.convert(target='CURVES', keep_original=False)
+    except:
+        print("⚠️ Conversion to CURVES failed, keeping as legacy CURVE")
+    
     obj = bpy.context.active_object
+    obj.select_set(True)
     
     # MATERIAL
     mat = create_material()
     if obj.data.materials: obj.data.materials[0] = mat
     else: obj.data.materials.append(mat)
 
+    # Force dependency graph update
+    dg = bpy.context.evaluated_depsgraph_get()
+    dg.update()
+    
     # EXPORT
     if 'blend' in requested_formats:
         out = f"{output_base}.blend"
@@ -91,7 +100,11 @@ try:
             bpy.ops.wm.alembic_export(
                 filepath=out, 
                 selected=True, 
+                start=1,
+                end=1,
                 export_hair=True,
+                export_particles=False,
+                as_background_job=False,
                 evaluation_mode='VIEWPORT'
             )
         except TypeError:
@@ -99,7 +112,20 @@ try:
             bpy.ops.wm.alembic_export(
                 filepath=out, 
                 selected=True, 
+                start=1,
+                end=1,
                 export_hair=True
+            )
+        
+        # Verify file size
+        if os.path.exists(out) and os.path.getsize(out) < 2000:
+            print(f"⚠️ Warning: {out} seems too small ({os.path.getsize(out)} bytes). Retrying without export_hair...")
+            bpy.ops.wm.alembic_export(
+                filepath=out, 
+                selected=True, 
+                start=1,
+                end=1,
+                export_hair=False
             )
         print(f"✅ Exported: {out}")
 
@@ -119,6 +145,15 @@ try:
                 filepath=out, 
                 selected_objects_only=True,
                 export_hair=True
+            )
+        
+        # Verify file size
+        if os.path.exists(out) and os.path.getsize(out) < 2000:
+            print(f"⚠️ Warning: {out} seems too small ({os.path.getsize(out)} bytes). Retrying without export_hair...")
+            bpy.ops.wm.usd_export(
+                filepath=out, 
+                selected_objects_only=True,
+                export_hair=False
             )
         print(f"✅ Exported: {out}")
         
