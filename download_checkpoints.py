@@ -329,7 +329,15 @@ def main():
                 os.environ["HF_TOKEN"] = token # Export for other tools
                 print("✅ HF_TOKEN detected from Colab Secrets.")
         except:
-            pass
+            # Fallback to local file if secrets fail
+            try:
+                if os.path.exists("/content/hf_token.txt"):
+                    with open("/content/hf_token.txt", "r") as f:
+                        token = f.read().strip()
+                        os.environ["HF_TOKEN"] = token
+                        print("✅ HF_TOKEN detected from /content/hf_token.txt")
+            except:
+                pass
             
     if token == "null" or token == "": token = None
     
@@ -400,19 +408,25 @@ def main():
                 hf_ckpt_repo = "arqdariogomez/difflocks-checkpoints-mirror"
 
     if hf_ckpt_repo:
-        print(f"🔹 Attempting to download checkpoints from private HF repo: {hf_ckpt_repo}")
+        print(f"🔹 Attempting to download checkpoints from HF repo: {hf_ckpt_repo}")
         try:
             from huggingface_hub import snapshot_download
+            import time
+            
+            start_time = time.time()
             snapshot_download(
                 repo_id=hf_ckpt_repo,
                 repo_type="dataset",
                 local_dir=str(checkpoints_dir),
-                token=token
+                token=token,
+                max_workers=4 # Faster downloads
             )
+            elapsed = time.time() - start_time
+            
             # Re-verify after download
             if (list(checkpoints_dir.rglob("scalp_*.pth")) or list(checkpoints_dir.rglob("*.ckpt"))) and \
                (list(checkpoints_dir.rglob("strand_codec.pt")) or list(checkpoints_dir.rglob("*.pt"))):
-                print("✅ Checkpoints downloaded from private HF repo!")
+                print(f"✅ Checkpoints downloaded from HF repo in {elapsed:.1f}s!")
                 return True
         except Exception as e:
             print(f"⚠️ Error downloading from HF repo {hf_ckpt_repo}: {e}")
@@ -422,10 +436,13 @@ def main():
     password = os.environ.get("MESH_PASS")
     
     if user and password:
+        print(f"🔑 Meshcapade credentials detected. Starting download...")
         if download_from_meshcapade(user, password, checkpoints_dir):
             print("✅ Download from Meshcapade successful!")
             backup_to_hf(checkpoints_dir, token)
             return True
+        else:
+            print("❌ Meshcapade download failed. Moving to fallback...")
     
     # 5. Fallback: Try official MPG link or direct download URL if provided
     mpg_url = "https://download.is.tue.mpg.de/download.php?domain=difflocks&sfile=difflocks_checkpoints.zip"
@@ -434,6 +451,9 @@ def main():
     if direct_url:
         print(f"🚀 Attempting direct download from: {direct_url}")
         try:
+            # Check if directory exists
+            checkpoints_dir.mkdir(parents=True, exist_ok=True)
+            
             zip_path = checkpoints_dir / "downloaded_checkpoints.zip"
             
             # Use a session with headers for better compatibility with MPG server
@@ -444,7 +464,8 @@ def main():
             })
             
             # Use stream=True for large files
-            r = session.get(direct_url, stream=True, timeout=600, allow_redirects=True)
+            print("⏳ Connecting to server...")
+            r = session.get(direct_url, stream=True, timeout=60, allow_redirects=True)
             
             if r.status_code == 200:
                 # Check if we actually got a zip or an HTML error page
