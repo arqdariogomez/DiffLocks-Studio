@@ -31,7 +31,7 @@ REPO_DIR = "/content/DiffLocks-Studio"
 DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
 CHECKPOINTS_SUBDIR = "checkpoints/difflocks_diffusion"
 MARKER_FILE = "/content/.clean_done"
-HF_WHEELS_REPO = "arqdariogomez/difflocks-assets-hybrid"
+HF_WHEELS_REPO = "arqdariogomez/difflocks-env"
 WHEELS_DIR = "/content/wheels"
 
 # --- UI DASHBOARD (Kaggle Style) ---
@@ -156,34 +156,24 @@ def setup_drive():
 def install_dependencies():
     render_status(30, "Configurando entorno de dependencias...", "running")
     
-    # 0. Obtener Token de HF (Secrets de Colab)
-    hf_token = None
-    try:
-        from google.colab import userdata
-        hf_token = userdata.get('HF_TOKEN')
-        if hf_token: log("HF_TOKEN detectado. Intentando acceder a recursos privados...", "success")
-    except:
-        pass
-    
     # 1. Intentar descargar Wheels desde HF (Ahorra tiempo de compilación)
+    # El repo arqdariogomez/difflocks-env es público, no requiere token.
     has_local_wheels = False
-    if hf_token:
-        render_status(35, "Descargando wheels optimizados desde Hugging Face...", "running")
-        try:
-            from huggingface_hub import snapshot_download
-            os.makedirs(WHEELS_DIR, exist_ok=True)
-            snapshot_download(
-                repo_id=HF_WHEELS_REPO,
-                repo_type="dataset",
-                local_dir=WHEELS_DIR,
-                allow_patterns=["wheels/*.whl"],
-                token=hf_token
-            )
-            if any(Path(WHEELS_DIR).glob("wheels/*.whl")):
-                log("Wheels optimizados descargados correctamente.", "success")
-                has_local_wheels = True
-        except Exception as e:
-            log(f"No se pudieron obtener wheels de HF (Repo privado o sin acceso). Se instalará normalmente.", "info")
+    render_status(35, "Descargando wheels optimizados desde Hugging Face (Public)...", "running")
+    try:
+        from huggingface_hub import snapshot_download
+        os.makedirs(WHEELS_DIR, exist_ok=True)
+        snapshot_download(
+            repo_id=HF_WHEELS_REPO,
+            repo_type="dataset",
+            local_dir=WHEELS_DIR,
+            allow_patterns=["wheels/*.whl"]
+        )
+        if any(Path(WHEELS_DIR).glob("wheels/*.whl")):
+            log("Wheels optimizados descargados correctamente (Público).", "success")
+            has_local_wheels = True
+    except Exception as e:
+        log(f"No se pudieron obtener wheels de HF automáticamente. Se instalará normalmente.", "info")
 
     # 2. Actualizar pip y herramientas base
     run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org"])

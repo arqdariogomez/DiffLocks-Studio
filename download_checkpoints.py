@@ -220,21 +220,29 @@ def download_public_assets(base_dir, token=None):
         os.system("pip install huggingface_hub")
         from huggingface_hub import snapshot_download
     
-    REPO_ID = "arqdariogomez/difflocks-assets-hybrid"
+    # We use the public env repo which also contains necessary assets or is accessible
+    REPO_ID = "arqdariogomez/difflocks-env"
     print(f"🔹 Downloading public resources from {REPO_ID}...")
     try:
-        # Try downloading. If it's a 401, it might be private or gated.
+        # Try downloading from the public repo. No token needed.
         snapshot_download(repo_id=REPO_ID, repo_type="dataset", allow_patterns=["assets/*"], 
                          local_dir=str(base_dir / "inference"), token=token)
         return True
     except Exception as e:
+        # Fallback to the hybrid repo if env doesn't have them yet, or if env download fails
+        ALT_REPO = "arqdariogomez/difflocks-assets-hybrid"
+        if REPO_ID != ALT_REPO:
+            try:
+                print(f"🔹 Attempting fallback to {ALT_REPO}...")
+                snapshot_download(repo_id=ALT_REPO, repo_type="dataset", allow_patterns=["assets/*"], 
+                                 local_dir=str(base_dir / "inference"), token=token)
+                return True
+            except:
+                pass
+
         error_str = str(e)
         if "401" in error_str or "Unauthorized" in error_str or "Repository Not Found" in error_str:
-            print(f"⚠️ Access denied to {REPO_ID}. This repository might be private or gated.")
-            print("💡 To fix this:")
-            print("   1. Create a Hugging Face account if you don't have one.")
-            print("   2. Generate a READ token at https://huggingface.co/settings/tokens")
-            print("   3. Set the HF_TOKEN secret in your environment (Colab/HF Spaces).")
+            print(f"⚠️ Access denied to assets. If the repo is private, please set HF_TOKEN.")
             
             # Fallback check: if we already have some assets, don't fail hard
             asset_path = base_dir / "inference" / "assets"
@@ -259,14 +267,11 @@ def main():
     # 1. Download Public Assets (Always needed)
     token = os.environ.get("HF_TOKEN")
     
-    # In Colab, we can try to get the token from userdata if not in env
+    # In Colab, we can try to get the token from userdata if present, but it's optional
     if not token:
         try:
             from google.colab import userdata
             token = userdata.get('HF_TOKEN')
-            if token:
-                os.environ["HF_TOKEN"] = token
-                print("🔑 Found HF_TOKEN in Colab Secrets.")
         except:
             pass
             
