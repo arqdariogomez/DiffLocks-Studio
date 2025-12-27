@@ -155,14 +155,15 @@ def install_dependencies():
     render_status(30, "Instalando dependencias base...", "running")
     
     # 1. Actualizar pip y herramientas base
-    run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"])
+    run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org"])
     
     # 2. Instalar Torch con CUDA específico
     render_status(40, "Instalando PyTorch (CUDA optimized)...", "running")
     run_cmd([
         sys.executable, "-m", "pip", "install", 
         "torch==2.4.0+cu121", "torchvision==0.19.0+cu121", 
-        "--extra-index-url", "https://download.pytorch.org/whl/cu121"
+        "--extra-index-url", "https://download.pytorch.org/whl/cu121",
+        "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org", "--trusted-host", "download.pytorch.org"
     ])
 
     # 3. Instalar requirements.txt (Optimizado para Colab)
@@ -171,13 +172,15 @@ def install_dependencies():
     run_cmd([
         sys.executable, "-m", "pip", "install", 
         "natten==0.17.1+torch240cu121", 
-        "--find-links", "https://shi-labs.com/natten/wheels/"
+        "--find-links", "https://shi-labs.com/natten/wheels/",
+        "--trusted-host", "shi-labs.com", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org"
     ])
     
     # Instalamos el resto de requirements
     run_cmd([
         sys.executable, "-m", "pip", "install", 
-        "-r", "requirements.txt"
+        "-r", "requirements.txt",
+        "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org", "--trusted-host", "huggingface.co"
     ], cwd=REPO_DIR)
 
     # 4. Asegurar versiones críticas para la UI y procesamiento
