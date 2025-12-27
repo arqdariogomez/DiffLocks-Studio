@@ -59,6 +59,42 @@ class Config:
                 if d.exists() and os.access(str(d), os.W_OK):
                     data_dir = d
                     break
+            
+            # Set standard directories relative to repo_dir initially
+            checkpoints_dir = repo_dir / "checkpoints"
+            configs_dir = repo_dir / "configs"
+
+            # HF Spaces persistent storage override - CRITICAL FIX
+            if data_dir:
+                # If /data exists and is writable, we MUST use it for checkpoints
+                # and create the checkpoints folder there if it doesn't exist.
+                data_checkpoints = data_dir / "checkpoints"
+                if not data_checkpoints.exists():
+                    try:
+                        data_checkpoints.mkdir(parents=True, exist_ok=True)
+                        print(f"📁 Created checkpoints directory in persistent storage: {data_checkpoints}")
+                    except: pass
+                
+                # Check if it has the required files
+                has_diff = (data_checkpoints / "difflocks_diffusion").exists() and list((data_checkpoints / "difflocks_diffusion").glob("scalp_*.pth"))
+                has_vae = (data_checkpoints / "strand_vae").exists() and list((data_checkpoints / "strand_vae").glob("*.pt"))
+                
+                # If it has them, or even if it's empty but writable, we prioritize it
+                checkpoints_dir = data_checkpoints
+                print(f"📍 HF Persistent Storage detected. Using checkpoints_dir: {checkpoints_dir}")
+            
+            return Config(
+                platform=platform,
+                work_dir=work_dir,
+                repo_dir=repo_dir,
+                output_dir=work_dir / "outputs",
+                checkpoints_dir=checkpoints_dir,
+                configs_dir=configs_dir,
+                blender_exe=blender_exe,
+                has_gpu=torch.cuda.is_available(),
+                vram_gb=torch.cuda.get_device_properties(0).total_memory / (1024**3) if torch.cuda.is_available() else 0,
+                needs_share=needs_share
+            )
         elif Path("/app").exists() and (os.environ.get("DOCKER_CONTAINER", "false") == "true" or Path("/.dockerenv").exists()):
             platform = 'docker'
             work_dir = Path("/app")
@@ -100,78 +136,26 @@ class Config:
             blender_exe = Path("blender/blender") 
             needs_share = False
 
-        # Set standard directories relative to repo_dir
-        checkpoints_dir = repo_dir / "checkpoints"
-        configs_dir = repo_dir / "configs"
-
-        # HF Spaces persistent storage override
-        if platform == 'huggingface':
-            # Priority 1: Official /data persistent storage
-            if Path("/data").exists():
-                # We check if checkpoints already exist in /data or /data/checkpoints
-                # Check for both .pth (diffusion) and .pt (vae)
-                has_diff = (Path("/data/checkpoints/difflocks_diffusion")).exists() and list((Path("/data/checkpoints/difflocks_diffusion")).glob("scalp_*.pth"))
-                has_vae = (Path("/data/checkpoints/strand_vae")).exists() and list((Path("/data/checkpoints/strand_vae")).glob("*.pt"))
-                
-                if has_diff and has_vae:
-                    checkpoints_dir = Path("/data/checkpoints")
-                elif (Path("/data/difflocks_diffusion")).exists() and list((Path("/data/difflocks_diffusion")).glob("scalp_*.pth")):
-                    checkpoints_dir = Path("/data")
-                else:
-                    # Default for new downloads in /data
-                    checkpoints_dir = Path("/data/checkpoints")
-            # Priority 2: local ./checkpoints
-            elif (repo_dir / "checkpoints").exists():
-                checkpoints_dir = repo_dir / "checkpoints"
-            # Priority 3: any other detected data dir
-            elif 'data_dir' in locals() and data_dir and data_dir.exists():
-                checkpoints_dir = data_dir / "checkpoints"
-            else:
-                # Default to repo_dir / checkpoints
-                checkpoints_dir = repo_dir / "checkpoints"
-
-        # Platform-specific checkpoint overrides
-        if platform == 'kaggle':
-            # Check for connected datasets first
-            # Kaggle datasets are usually in /kaggle/input/<dataset-name>
-            potential_ckpt_dirs = [
-                Path("/kaggle/input/difflocks-checkpoints"),
-                Path("/kaggle/input/difflocks/checkpoints"),
-                repo_dir / "checkpoints"
-            ]
-            for d in potential_ckpt_dirs:
-                if d.exists() and (d / "difflocks_diffusion").exists():
-                    checkpoints_dir = d
-                    break
-        elif platform == 'colab':
-            # Check for Google Drive mount
-            gdrive_ckpt = Path("/content/drive/MyDrive/DiffLocks/checkpoints")
-            if gdrive_ckpt.exists():
-                checkpoints_dir = gdrive_ckpt
-
-        # Special case for Docker if they are mapped differently
-        if platform == 'docker':
-            if not checkpoints_dir.exists() and Path("/app/checkpoints").exists():
-                checkpoints_dir = Path("/app/checkpoints")
-            if not configs_dir.exists() and Path("/app/configs").exists():
-                configs_dir = Path("/app/configs")
-
-        has_gpu = False
-        vram_gb = 0.0
-        try:
-            import torch
-            has_gpu = torch.cuda.is_available()
-            if has_gpu:
-                vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        except: pass
-
-        if platform == 'docker' or platform == 'pinokio' or platform == 'local':
-            output_dir = repo_dir / "studio_outputs"
-        else:
-            output_dir = work_dir / "outputs"
+        # HF Spaces persistent storage override (moved to detection logic for HF)
+        if platform != 'huggingface':
+            checkpoints_dir = repo_dir / "checkpoints"
+            configs_dir = repo_dir / "configs"
         
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Determine output_dir
+        output_dir = work_dir / "outputs"
 
-        return Config(platform, work_dir, repo_dir, output_dir, checkpoints_dir, configs_dir, blender_exe, has_gpu, vram_gb, needs_share)
+        import torch
+        return Config(
+            platform=platform,
+            work_dir=work_dir,
+            repo_dir=repo_dir,
+            output_dir=output_dir,
+            checkpoints_dir=checkpoints_dir,
+            configs_dir=configs_dir,
+            blender_exe=blender_exe,
+            has_gpu=torch.cuda.is_available(),
+            vram_gb=torch.cuda.get_device_properties(0).total_memory / (1024**3) if torch.cuda.is_available() else 0,
+            needs_share=needs_share
+        )
 
 cfg = Config.detect()

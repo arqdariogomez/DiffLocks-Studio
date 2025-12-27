@@ -359,9 +359,9 @@ def find_checkpoints_everywhere():
     
     search_dirs = [
         cfg.checkpoints_dir,
-        cfg.repo_dir / "checkpoints",
         Path("/data/checkpoints"),
         Path("/data"),
+        cfg.repo_dir / "checkpoints",
         Path("/app/checkpoints"),
         Path("/home/user/app/checkpoints"),
         Path.cwd() / "checkpoints",
@@ -433,8 +433,15 @@ def find_checkpoints_everywhere():
             ckpt_files = [found_pth]
             vae_files = [found_pt]
             # Use the parent of the diffusion model as the "checkpoints_dir" for reference
+            # If it's something like /data/checkpoints/difflocks_diffusion/scalp.pth, 
+            # parent.parent is /data/checkpoints
             checkpoints_dir = found_pth.parent.parent
             cfg.checkpoints_dir = checkpoints_dir
+            
+            # LOG SUCCESSFUL DETECTION
+            print(f"✅ [SUCCESS] Models detected!")
+            print(f"  - Diffusion: {found_pth}")
+            print(f"  - VAE: {found_pt}")
             return True
                 
     # If we are here, we failed. Let's log what we DID find to help debug
