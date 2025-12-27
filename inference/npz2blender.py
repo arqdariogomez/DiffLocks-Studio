@@ -1,266 +1,284 @@
-
-#run with 
-# ~/blender-4.1.1-linux-x64/blender  -t 8 --background --python ./inference/npz2blender.py -- --input_npz <NPZ_PATH> --out_path <OUTPUT_PATH> --export_alembic
-
-
-
-
-
-
-
 import bpy
-from bpy.app.handlers import persistent
-import bpy_extras
 import os
-import numpy as np
-# from gloss import *
-# import trimesh
-# import json
-import argparse
-import sys
-# import imageio.v3 as iio
-from os import listdir
-from os.path import isfile, join
-
-import math
-from mathutils import Matrix, Vector
-import mathutils
-import shutil
 import time
+import traceback
+import numpy as np
+import sys
+from bpy_extras.io_utils import ImportHelper
+from bpy.props import StringProperty, BoolProperty, FloatProperty, EnumProperty, IntProperty
+from bpy.types import Operator
 
+bl_info = {
+    "name": "Import DiffLocks",
+    "author": "Dario Gomez",
+    "version": (1, 0),
+    "blender": (4, 1, 0),
+    "location": "File > Import",
+    "description": "Import with controls for both Strand Amount and Point Resolution",
+    "category": "Import-Export",
+}
 
+class ImportDiffLocksDual(Operator, ImportHelper):
+    bl_idname = "import_curve.difflocks_v37"
+    bl_label = "Import DiffLocks (Dual Control)"
+    bl_options = {'REGISTER', 'UNDO'}
 
-path_cur_script=os.path.dirname(os.path.abspath(__file__))
-
-def export_alembic(out_alembic_path, resolution):
-    print("-------------------------------------------")
+    filter_glob: StringProperty(default="*.npz", options={'HIDDEN'})
     
-    # bpy.ops.outliner.item_activate(deselect_all=True)
-    bpy.data.objects["hair_01"].select_set(True)
-    # hair = bpy.context.active_object
-    hair = bpy.data.objects["hair_01"]
-    bpy.context.view_layer.objects.active=hair
-
-
-    start=time.time()
-    for modif in hair.modifiers:
-        print("applying",modif.name)
-        bpy.context.view_layer.objects.active = hair
-        bpy.ops.object.modifier_apply(modifier=modif.name)
-    print("finished applying all geometry nodes")
-    end=time.time()
-    print("applying geometry nodes took", end-start)
-    #shrinkwrap on the scalp (Wrong because it makes weird strands for the long hair)
-    #default hair with t=8: 20s
-    #default hair with t=16: 15s
-    #50% strans with t=16: 6s
-
-    #with shrinkwrap on the whole mesh
-    #default hair with t=8: 43s
-    #default hair with t=16: 34s
-    #50% strans with t=16: 14s
-    #50% strans, 50%points with t=16: 7s
-    #50% strans, 25%points with t=16: 5s
-
-
-
-
-    #conver particle
-    bpy.ops.curves.convert_to_particle_system()
-
-    # bpy.ops.outliner.item_activate(deselect_all=True)
-    # bpy.context.space_data.context = 'PARTICLES'
-    bpy.context.object.show_instancer_for_render = False
-    bpy.context.object.show_instancer_for_viewport = False
-    #I have no idea which one actually works to increase resolution so I change all
-    # bpy.data.particles["ParticleSettings"].display_step = 7
-    # bpy.data.particles["ParticleSettings"].hair_step = 7
-    # bpy.data.particles["ParticleSettings"].render_step = 7
-    bpy.data.particles["ParticleSettings"].display_step = resolution
-    bpy.data.particles["ParticleSettings"].hair_step = resolution
-    bpy.data.particles["ParticleSettings"].render_step = resolution
+    scale_factor: FloatProperty(
+        name="Global Scale", 
+        description="Scale multiplier (1.0 = Original size)",
+        default=1.0, min=0.01, max=100.0
+    )
     
+    rotate_x_90: BoolProperty(
+        name="Rotate 90° (Z-Up)", 
+        default=True
+    )
+    
+    convert_to_hair: BoolProperty(
+        name="Convert to Hair Curves", 
+        default=True
+    )
+    
+    # --- CONTROL 1: QUANTITY ---
+    strand_count_pct: IntProperty(
+        name="Strand Amount %",
+        description="How many hairs to import. 10% is great for quick testing/guides.",
+        default=100, min=1, max=100
+    )
 
-    #hide everything except scalp
-    for obj in bpy.data.objects:
-        print("obj", obj)
-        if obj.name!="smplx_scalp_blender":
-            obj.hide_render=True
-            obj.hide_viewport=True
-        else:
-            print("smplx scalp blender doesn't get hidden")
-    # for obj in bpy.scene.objects:
-        # print("obj in scene", obj)
+    # --- CONTROL 2: QUALITY ---
+    point_resolution_pct: IntProperty(
+        name="Point Resolution %",
+        description="Smoothness per hair. 20% keeps the shape but removes extra vertices.",
+        default=100, min=5, max=100
+    )
+    
+    hair_preset: EnumProperty(
+        name="Base Color",
+        items=[
+            ('BLONDE', "Blonde", "Light/Nordic"), 
+            ('BROWN', "Brown", "Standard Brunette"), 
+            ('BLACK', "Black", "Dark/Asian/African"), 
+            ('RED', "Red", "Ginger/Celtic")
+        ],
+        default='BLONDE', 
+    )
+    
+    use_vertex_colors: BoolProperty(
+        name="Use Color Data", 
+        default=True
+    )
 
+    def execute(self, context):
+        if not os.path.exists(self.filepath): return {'CANCELLED'}
+        context.window.cursor_modal_set('WAIT')
+        try:
+            return self.read_npz_file(context)
+        except Exception as e:
+            self.report({'ERROR'}, f"Error: {e}")
+            traceback.print_exc()
+            return {'CANCELLED'}
+        finally:
+            context.window.cursor_modal_set('DEFAULT')
 
+    def create_safe_material(self, name, hair_data=None):
+        mat_name = f"{name}_Mat"
+        if mat_name in bpy.data.materials:
+            bpy.data.materials.remove(bpy.data.materials[mat_name])
+            
+        mat = bpy.data.materials.new(name=mat_name)
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+        nodes.clear()
+        
+        shader = nodes.new(type='ShaderNodeBsdfHairPrincipled')
+        shader.location = (300, 300)
+        
+        presets = {'BLACK': (0.95, 0.1), 'BROWN': (0.65, 0.5), 'BLONDE': (0.25, 0.3), 'RED': (0.60, 0.95)}
+        m, r = presets.get(self.hair_preset, (0.65, 0.5))
+        
+        used_attributes = False
+        if hair_data and 'colors' in hair_data and self.use_vertex_colors:
+            try:
+                attr_node = nodes.new(type='ShaderNodeAttribute')
+                attr_node.attribute_name = "DiffLocks_Color"
+                attr_node.location = (0, 400)
+                for inp in shader.inputs:
+                    if "color" in inp.name.lower() and "random" not in inp.name.lower():
+                        links.new(attr_node.outputs["Color"], inp)
+                        m = 0.0; used_attributes = True; break
+            except: pass
 
-    bpy.data.objects['smplx_scalp_blender'].hide_render=False
-    bpy.data.objects['smplx_scalp_blender'].hide_viewport=False
-    bpy.data.objects['smplx_scalp_blender'].show_instancer_for_render = False
-    bpy.data.objects['smplx_scalp_blender'].show_instancer_for_viewport = False
-    bpy.data.objects["smplx_scalp_blender"].select_set(True)
+        for inp in shader.inputs:
+            n = inp.name.lower()
+            if not used_attributes: 
+                if "melanin" in n and "redness" not in n: inp.default_value = m
+                if "redness" in n: inp.default_value = r
+            if "roughness" in n and "radial" not in n: inp.default_value = 0.5
+            if "coat" in n: inp.default_value = 0.1
 
+        out = nodes.new(type='ShaderNodeOutputMaterial')
+        out.location = (600, 300)
+        links.new(shader.outputs[0], out.inputs[0])
+        return mat
 
+    def read_npz_file(self, context, filepath=None):
+        t_total_start = time.time()
+        filepath = filepath or self.filepath
+        
+        try: import numpy as np
+        except: raise ImportError("Numpy not installed.")
 
-    try:
-        bpy.ops.wm.alembic_export(
-            filepath=out_alembic_path, 
-            check_existing=False, 
-            start=1, 
-            end=1,
-            selected=True, 
-            uvs=False, 
-            packuv=False, 
-            normals=False, 
-            use_instancing=False, 
-            global_scale=1.0, 
-            export_hair=True, 
-            export_particles=False, 
-            as_background_job=False, 
-            init_scene_frame_range=True,
-            evaluation_mode='VIEWPORT'
-        )
-    except TypeError:
-        # Fallback for older Blender versions
-        bpy.ops.wm.alembic_export(
-            filepath=out_alembic_path, 
-            check_existing=False, 
-            start=1, 
-            end=1,
-            selected=True, 
-            uvs=False, 
-            packuv=False, 
-            normals=False, 
-            use_instancing=False, 
-            global_scale=1.0, 
-            export_hair=True, 
-            export_particles=False, 
-            as_background_job=False, 
-            init_scene_frame_range=True
-        )
+        print(f"\n{'='*40}")
+        print(f"📂 Reading: {filepath}")
+        data = np.load(filepath)
+        positions = data['positions']
+        colors = data.get('colors', None)
+        radii = data.get('radii', None)
+        
+        total_available = positions.shape[0]
+        
+        # --- OPTIMIZATION 1: STRAND COUNT (Quantity) ---
+        if self.strand_count_pct < 100:
+            limit = int(total_available * (self.strand_count_pct / 100.0))
+            print(f"✂️  Quantity Limit: {self.strand_count_pct}% ({limit} / {total_available} strands)")
+            
+            # Slice Dimension 0 (Strands)
+            positions = positions[:limit]
+            if radii is not None:
+                if radii.ndim >= 1: radii = radii[:limit]
+            if colors is not None:
+                if colors.ndim >= 1: colors = colors[:limit]
+        
+        # --- OPTIMIZATION 2: POINT RESOLUTION (Quality) ---
+        if self.point_resolution_pct < 100:
+            factor = self.point_resolution_pct / 100.0
+            step = int(1.0 / factor)
+            if step < 1: step = 1
+            print(f"✂️  Quality Reduction: {self.point_resolution_pct}% (1 out of {step} points)")
+            
+            # Slice Dimension 1 (Points per strand)
+            positions = positions[:, ::step, :]
+            if radii is not None and radii.ndim == 2: radii = radii[:, ::step]
+            if colors is not None and colors.ndim == 3: colors = colors[:, ::step, :]
+        
+        hair_data_dict = {'colors': colors} if colors is not None else None
+        num_strands = int(positions.shape[0])
+        pts_per_strand = int(positions.shape[1])
+        
+        print(f"🚀 Processing {num_strands:,} strands ({pts_per_strand} pts each)...")
 
+        # 1. GEOMETRY PREP
+        flat_pos = positions.reshape(-1, 3) * self.scale_factor
+        if self.rotate_x_90:
+            flat_pos = flat_pos[:, [0, 2, 1]]
+            flat_pos[:, 1] *= -1
+            
+        points_4d = np.empty((num_strands * pts_per_strand, 4), dtype=np.float32)
+        points_4d[:, :3] = flat_pos
+        points_4d[:, 3] = 1.0
 
+        # 2. LEGACY CURVE BUILD (With Feedback)
+        print("🔨 Building Geometry: ", end="", flush=True)
+        curve_data = bpy.data.curves.new(name="DiffLocks_Temp", type='CURVE')
+        curve_data.dimensions = '3D'
+        
+        report_interval = max(1, num_strands // 10)
+        
+        for i in range(num_strands):
+            s = curve_data.splines.new('POLY')
+            s.points.add(pts_per_strand - 1)
+            start = i * pts_per_strand
+            end = start + pts_per_strand
+            s.points.foreach_set('co', points_4d[start:end].ravel())
+            
+            if i > 0 and i % report_interval == 0:
+                percent = int((i / num_strands) * 100)
+                print(f"{percent}%...", end=" ", flush=True)
+        
+        print("100% Done.")
 
-def main():
-    print("main")
+        # 3. OBJECT CREATION
+        temp_obj = bpy.data.objects.new("DiffLocks_Temp", curve_data)
+        context.collection.objects.link(temp_obj)
+        bpy.ops.object.select_all(action='DESELECT')
+        temp_obj.select_set(True)
+        context.view_layer.objects.active = temp_obj
+        
+        # 4. CONVERSION
+        final_obj = temp_obj
+        
+        if self.convert_to_hair:
+            print("✨ Converting to Modern Hair Curves...", end=" ", flush=True)
+            t_conv = time.time()
+            try:
+                bpy.ops.object.convert(target='CURVES', keep_original=False)
+                final_obj = context.active_object
+                final_obj.name = "DiffLocks_Hair"
+                print(f"Done ({time.time() - t_conv:.2f}s)")
+                
+                # Attributes
+                if radii is not None:
+                    r_flat = radii.reshape(-1) * self.scale_factor
+                    if len(final_obj.data.attributes['radius'].data) == len(r_flat):
+                        final_obj.data.attributes['radius'].data.foreach_set('value', r_flat.astype(np.float32))
+                else:
+                    total_pts = len(final_obj.data.points)
+                    defaults = np.full(total_pts, 0.003 * self.scale_factor, dtype=np.float32)
+                    final_obj.data.attributes['radius'].data.foreach_set('value', defaults)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--input_npz', required=True) #npz file to read and create a alembic from
-    parser.add_argument('--out_path', required=True) #output path for the blender file and the alembic
-    parser.add_argument('--export_alembic', action='store_true') #set it to true to also export an alembic file
-    parser.add_argument('-ss', '--strands_subsample', type=float, default=1.0)  # perentage of strands we keep (1.0=keep all, 0.5=keep half, 0.25=keep quarter)
-    parser.add_argument('-vs', '--vertex_subsample', type=float, default=1.0)  # perentage of vertices per strand to keep (1.0=keep all, 0.5=keep half, 0.25=keep quarter)
-    parser.add_argument('-ar', '--alembic_resolution', type=int, default=7) #the resolution of the alembic, higher number means more points per strand (default=7 which is probably 2^7=128 points per strands)
-    parser.add_argument('-sh', '--shrinkwrap', action='store_true') #set it to true to perform a shrinkwrap of the hair so that it avoids penetrating through the body
-    args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
-    print("strands_subsample", args.strands_subsample)
-    print("vertex_subsample", args.vertex_subsample)
-    print("alembic_resolution", args.alembic_resolution)
-    print("shrinkwrap", args.shrinkwrap)
+                if colors is not None and self.use_vertex_colors:
+                    try:
+                        if "DiffLocks_Color" not in final_obj.data.attributes:
+                            attr = final_obj.data.attributes.new(name="DiffLocks_Color", type='FLOAT_COLOR', domain='POINT')
+                        else: attr = final_obj.data.attributes["DiffLocks_Color"]
+                        c_flat = colors.reshape(-1, 3)
+                        rgba = np.ones((len(c_flat), 4), dtype=np.float32)
+                        rgba[:, :3] = c_flat
+                        attr.data.foreach_set('color', rgba.ravel())
+                    except: pass
 
+            except Exception as e:
+                print(f"\n⚠️ Conversion failed: {e}")
 
-    #read npz 
-    path_hair=args.input_npz
-    do_export_alembic=args.export_alembic
+        # 5. FINISH
+        print("🎨 Assigning Material...")
+        mat = self.create_safe_material("DiffLocks", hair_data_dict)
+        if final_obj.data.materials: final_obj.data.materials[0] = mat
+        else: final_obj.data.materials.append(mat)
+        
+        try: final_obj.data.surface_uv_map = "UVMap" 
+        except: pass
 
+        try:
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.spaces.active.shading.type = 'MATERIAL'
+                    ctx = context.copy(); ctx['area'] = area
+                    with context.temp_override(**ctx): bpy.ops.view3d.view_selected()
+                    break
+        except: pass
 
-    hair_geom=np.load(path_hair)
-    points=hair_geom["positions"] #nr_strands x nr_points_per_strand x 3
+        print(f"✅ TOTAL TIME: {time.time() - t_total_start:.2f}s")
+        print("="*40)
+        return {'FINISHED'}
 
+def register():
+    bpy.utils.register_class(ImportDiffLocksDual)
+    bpy.types.TOPBAR_MT_file_import.append(menu_func)
 
-    subsample_nr_strands=False
-    #removes randomly x amount of strands or X nr of vertices
-    if args.strands_subsample!=1.0 or args.vertex_subsample!=1.0:
-        subsample_nr_strands=True
-    if subsample_nr_strands:
-        print("before ramoving random curves, points is ", points.shape) #nr_strands x nr_verts x3
-        num_strands_to_keep = int(points.shape[0] * args.strands_subsample)
-        strands_to_keep = np.random.choice(points.shape[0], num_strands_to_keep, replace=False)
-        points = points[strands_to_keep, :, :].copy()
-        print("after removing random curves, points is ", points.shape)
+def unregister():
+    bpy.utils.unregister_class(ImportDiffLocksDual)
+    bpy.types.TOPBAR_MT_file_import.remove(menu_func)
 
-        #removing verts now 
-        nr_verts_to_skip=int(np.floor(1.0/args.vertex_subsample))
-        print("nr_verts_to_skip",nr_verts_to_skip)
-        points = points[:, ::nr_verts_to_skip, :].copy()
-        print("after removing consecurive vertices, points is ", points.shape)
-    print("final points", points.shape)
+def menu_func(self, context):
+    self.layout.operator(ImportDiffLocksDual.bl_idname, text="DiffLocks Hair (.npz)")
 
-    #open the blender file
-    # path_in_blend=os.path.join(path_cur_script,"./assets/blender_vis_base_v24.blend")
-    # path_in_blend=os.path.join(path_cur_script,"./assets/blender_vis_base_v25_with_shrinkwrap.blend")
-    # if args.shrinkwrap:
-    #     path_in_blend=os.path.join(path_cur_script,"./assets/blender_vis_base_v26_with_shrinkwrap_full_base.blend")
-    # else:
-    #     path_in_blend=os.path.join(path_cur_script,"./assets/blender_vis_base_v24.blend")
-    # path_in_blend=os.path.join(path_cur_script,"./assets/blender_vis_base_v27_blender36.blend")
-    path_in_blend=os.path.join(path_cur_script,"./assets/blender_vis_base_v26_with_shrinkwrap_full_base.blend")
-    bpy.ops.wm.open_mainfile(filepath=path_in_blend)
-
-
-    #write new geometry
-    print("creating geometry")
-    bpy.data.objects["hair_01"].select_set(True)
-    obj = bpy.data.objects.get("hair_01")
-    bpy.context.view_layer.objects.active = obj
-    # bpy.ops.object.mode_set(mode='EDIT')
-    # #  Get the evaluated state of the object to account for geometry nodes and modifiers
-    # depsgraph = bpy.context.evaluated_depsgraph_get()
-    # depsgraph.update()
-    # eval_obj = obj.evaluated_get(depsgraph)
-    # curves_data=eval_obj.data
-    # help(obj.data)
-    curves_data=obj.data
-    nr_strands=points.shape[0]
-    # nr_strands=3000
-    nr_points_per_strand=points.shape[1]
-
-    #v4 faster
-    points_per_curve = [nr_points_per_strand for i in range(nr_strands)]
-    curves_data.add_curves(points_per_curve)
-    # print("added curves")
-    # exit(1)
-
-    # Prepare a flat array for positions
-    flat_points = points.reshape(-1, 3)  # Flatten points to a 2D array
-    flat_points[:, [1, 2]] = flat_points[:, [2, 1]]  # Swap y and z
-    flat_points[:, 1] *= -1  # Negate the y values
-
-    # Assign the flat array directly
-    curves_data.points.foreach_set("position", flat_points.flatten())
-          
-
-
-    if not args.shrinkwrap:
-        bpy.ops.object.modifier_remove(modifier="Shrinkwrap Hair Curves")
-
-   
-
-
-
-
-
-    # Update the viewport to reflect changes
-    obj.data.update_tag()
-    obj.modifiers.update()
-    # bpy.ops.object.mode_set(mode='OBJECT') 
-    bpy.context.view_layer.update()
-
-
-
-    #save blend file
-    print('saving .blend')
-    out_scene_path=os.path.join(args.out_path, "blender_scene.blend")
-    bpy.ops.wm.save_as_mainfile(filepath=out_scene_path) 
-    print('finished saving .blend')
-
-
-    if do_export_alembic:
-        out_path_alembic=os.path.join(args.out_path, "hair.abc")
-        print("exporting hair to", out_path_alembic)
-        export_alembic(out_path_alembic, args.alembic_resolution)
-
-   
-if __name__ == '__main__':
-    main() 
-
+if __name__ == "__main__":
+    try: unregister()
+    except: pass
+    register()
+    bpy.ops.import_curve.difflocks_v37('INVOKE_DEFAULT')

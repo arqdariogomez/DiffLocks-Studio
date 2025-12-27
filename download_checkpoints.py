@@ -53,8 +53,8 @@ def download_from_meshcapade(user, password, checkpoints_dir):
     checkpoints_dir = Path(checkpoints_dir)
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     
-    # REGLA: No redistribuir checkpoints.
-    # El usuario debe descargarlos.
+    # RULE: Do not redistribute checkpoints.
+    # The user must download them.
     print("ℹ️  Please ensure you have accepted the terms at https://meshcapade.com/models")
     
     # Try custom URL first if provided
@@ -169,6 +169,7 @@ def download_from_meshcapade(user, password, checkpoints_dir):
                         if downloaded - last_log > (1024*1024*25): 
                             pct = (downloaded / total_size * 100) if total_size > 0 else 0
                             print(f"   ... {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)", flush=True)
+                            print(f"PROGRESS: {82 + (pct * 0.15):.1f}%", flush=True) # Mapping 0-100% download to 82-97% global progress
                             last_log = downloaded
                 
                 print(f"📂 Extracting {name}...")
@@ -337,6 +338,7 @@ def attempt_direct_download(url, checkpoints_dir, token=None):
                         if downloaded - last_log > (1024*1024*25): # Log every 25MB
                             pct = (downloaded / total_size * 100) if total_size > 0 else 0
                             print(f"   ... {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)", flush=True)
+                            print(f"PROGRESS: {82 + (pct * 0.15):.1f}%", flush=True) # Mapping 0-100% download to 82-97% global progress
                             last_log = downloaded
             
             print(f"✅ Download complete.", flush=True)

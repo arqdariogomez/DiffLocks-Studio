@@ -106,15 +106,15 @@ def auto_check_blender():
     """Checks for blender at startup and downloads it if missing in local/pinokio."""
     global cfg
     if cfg.platform in ['pinokio', 'local'] and not cfg.blender_exe.exists():
-        print("🟧 Blender no detectado. Iniciando descarga automática...")
+        print("🟧 Blender not detected. Starting automatic download...")
         try:
             success = download_blender(cfg.repo_dir / "blender")
             if success:
                 from platform_config import Config
                 cfg = Config.detect()
-                print(f"✅ Blender instalado automáticamente en: {cfg.blender_exe}")
+                print(f"✅ Blender installed automatically at: {cfg.blender_exe}")
             else:
-                print("❌ La descarga automática de Blender falló.")
+                print("❌ Automatic Blender download failed.")
         except Exception as e:
             print(f"❌ Error en auto_check_blender: {e}")
 
@@ -726,9 +726,9 @@ def generate_preview_3d(npz_path, log_capture=None):
                     width=2.2, # Slightly thicker as requested
                     color=g_color_idx.tolist(),
                     colorscale=[
-                        [0.0, 'rgb(51, 51, 51)'],       # Raíz: Gris oscuro (Sólido)
-                        [0.5, 'rgb(255, 255, 255)'],    # Centro: Blanco brillante (Sólido)
-                        [1.0, 'rgb(30, 30, 35)']        # Puntas: Gris muy oscuro (Para fundir con el fondo #18181b)
+                        [0.0, 'rgb(51, 51, 51)'],       # Root: Dark grey (Solid)
+                        [0.5, 'rgb(255, 255, 255)'],    # Center: Bright white (Solid)
+                        [1.0, 'rgb(30, 30, 35)']        # Tips: Very dark grey (To blend with background #18181b)
                     ],
                 ),
                 hoverinfo='none',
@@ -1207,58 +1207,6 @@ dark_theme = gr.themes.Base(
 )
 
 with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) as demo:
-    # --- 8.0. MISSING CHECKPOINTS NOTICE ---
-    if not ckpt_files:
-        with gr.Group():
-            gr.Markdown(f"""
-                <div style="padding: 20px; border: 2px solid #fbbf24; border-radius: 12px; background: rgba(251, 191, 36, 0.05);">
-                    <h2 style="color: #fbbf24; margin-top: 0;">💇‍♀️ Welcome to DiffLocks Studio!</h2>
-                    <p style="font-size: 16px; line-height: 1.5;">
-                        We noticed that the <b>required model checkpoints</b> have not been assigned yet. 
-                        To generate high-fidelity 3D hair, you need the official DiffLocks weights.
-                    </p>
-                    <div style="display: flex; gap: 20px; margin: 20px 0;">
-                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <h3 style="margin-top: 0; font-size: 14px; color: #e4e4e7;">🚀 Quick Setup</h3>
-                            <ul style="font-size: 13px; color: #a1a1aa; padding-left: 20px;">
-                                <li><b>Hugging Face:</b> Add <code>HF_TOKEN</code> to Space Secrets.</li>
-                                <li><b>Colab/Kaggle:</b> Follow the login prompts in the notebook.</li>
-                                <li><b>Local:</b> Place weights in <code>./checkpoints/</code></li>
-                            </ul>
-                        </div>
-                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <h3 style="margin-top: 0; font-size: 14px; color: #e4e4e7;">📖 Need Help?</h3>
-                            <p style="font-size: 13px; color: #a1a1aa;">
-                                Check the detailed instructions in our <a href="https://github.com/arqdariogomez/DiffLocks-Studio" target="_blank" style="color: #fbbf24; text-decoration: underline;">GitHub README</a>.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            """, elem_id="missing-ckpt-notice")
-            
-            with gr.Row():
-                with gr.Column(scale=2):
-                    manual_download_btn = gr.Button("🚀 Attempt Auto-Download Now", variant="primary")
-                with gr.Column(scale=3):
-                    status_download = gr.Markdown("*(Click only if you have already set up your HF_TOKEN or Meshcapade credentials)*")
-            
-            def manual_download():
-                capture = VerboseLogCapture().start()
-                try:
-                    success = download_checkpoints_hf()
-                    logs = capture.get_logs()
-                    capture.stop()
-                    
-                    log_str = "\n".join(logs[-15:])
-                    if success:
-                        return f"✅ **Success!** Checkpoints found or downloaded.\n\n**Recent Logs:**\n```\n{log_str}\n```\n\n**Please restart/refresh the Space** to load them."
-                    return f"❌ **Failed:** Could not find checkpoints.\n\n**Recent Logs:**\n```\n{log_str}\n```"
-                except Exception as e:
-                    capture.stop()
-                    return f"❌ **Error:** {str(e)}"
-            
-            manual_download_btn.click(fn=manual_download, outputs=status_download)
-
     # --- 8.0.1 DIAGNOSTICS TAB ---
     with gr.Accordion("🔍 System Diagnostics (Click to debug paths)", open=False):
         diag_btn = gr.Button("Run Path Diagnostic")
@@ -1344,9 +1292,9 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <span style="font-size: 20px;">❌</span>
                             <div>
-                                <h4 style="color: #ef4444; margin: 0; font-size: 14px;">Error: Blender no pudo descargarse automáticamente</h4>
+                                <h4 style="color: #ef4444; margin: 0; font-size: 14px;">Error: Blender could not be downloaded automatically</h4>
                                 <p style="color: #d4d4d8; margin: 4px 0 0 0; font-size: 12px;">
-                                    Las exportaciones avanzadas no funcionarán. Por favor, instala Blender 4.2 manualmente en la carpeta <code>blender/</code>.
+                                    Advanced exports will not work. Please install Blender 4.2 manually in the <code>blender/</code> folder.
                                 </p>
                             </div>
                         </div>

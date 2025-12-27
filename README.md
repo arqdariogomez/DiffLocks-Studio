@@ -64,7 +64,20 @@ Even with manual setup, using the **Secrets** add-on is the best practice for pr
 - **Localized Interface**: UI and logs fully in English for a better experience.
 - **Platform Detection**: Automatic configuration for Pinokio, Docker, Kaggle, Colab, and HF Spaces.
 - **GPU Optimization**: Native GPU decoding to avoid bottlenecks and improve stability in Docker.
-- **Advanced Export**: Native support for Blender (Hair Curves), Alembic, and USD.
+- **Advanced Export**: Native support for Blender (Hair Curves), Alembic (.abc), and USD.
+- **Platform-Aware Precision**: Automatic VRAM detection and optimization.
+- **Natten Fallback**: Native PyTorch implementation for Neighborhood Attention if NATTEN is missing.
+- **Blender Integration**: Custom `.npz` importer for Blender with dual control (Strand Amount & Resolution).
+
+---
+
+## 🔌 Blender Add-on (Importador)
+
+To import the generated `.npz` files into Blender with full control over strand count and resolution:
+1. Download [**difflocks_blender_addon.zip**](./difflocks_blender_addon.zip) from this repository.
+2. In Blender, go to **Edit > Preferences > Add-ons > Install...**.
+3. Select the `.zip` file and enable **"Import-Export: Import DiffLocks"**.
+4. Use **File > Import > DiffLocks (.npz)** to import your hair.
 
 ---
 

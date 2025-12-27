@@ -1,10 +1,10 @@
 # @title 🚀 DiffLocks Studio - Colab Edition (V68 - Hybrid Stable)
 # ==================================================================================
-# V68: Basado en Github-Minimal (V52) + Limpieza Profunda + Persistencia en Drive
-# - UI estilo Kaggle (checkboxes visibles, dark theme)
-# - Limpieza profunda de binarios para evitar errores de NumPy
-# - Persistencia de checkpoints en Google Drive (/content/drive/MyDrive/DiffLocks)
-# - Aislamiento de procesos con fix para Matplotlib backend
+# V68: Based on Github-Minimal (V52) + Deep Clean + Drive Persistence
+# - Kaggle-style UI (visible checkboxes, dark theme)
+# - Deep binary cleaning to avoid NumPy/Cuda errors
+# - Checkpoint persistence in Google Drive (/content/drive/MyDrive/DiffLocks)
+# - Process isolation with Matplotlib backend fix
 # ==================================================================================
 
 import os
@@ -19,13 +19,13 @@ import warnings
 import logging
 from pathlib import Path
 
-# --- SILENCING (Kaggle Style) ---
+# --- SILENCING ---
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 warnings.filterwarnings("ignore")
 for name in ["natten", "gradio", "httpx", "uvicorn", "matplotlib", "PIL", "mediapipe"]:
     logging.getLogger(name).setLevel(logging.CRITICAL)
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURATION ---
 REPO_URL = "https://github.com/arqdariogomez/DiffLocks-Studio.git"
 REPO_DIR = "/content/DiffLocks-Studio"
 DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
@@ -34,7 +34,7 @@ MARKER_FILE = "/content/.clean_done"
 HF_WHEELS_REPO = "arqdariogomez/difflocks-env"
 WHEELS_DIR = "/content/wheels"
 
-# --- UI DASHBOARD (Kaggle Style) ---
+# --- UI DASHBOARD ---
 from IPython.display import display, HTML, clear_output
 
 install_log_lines = []
@@ -48,7 +48,7 @@ def render_status(progress, message, status="running"):
         logs_content = "<br>".join(install_log_lines[-10:])
         logs_html = f"""
         <details style="margin-top: 10px;" open>
-            <summary style="cursor: pointer; color: #a1a1aa; font-size: 11px;">📋 Últimos Logs</summary>
+            <summary style="cursor: pointer; color: #a1a1aa; font-size: 11px;">📋 Latest Logs</summary>
             <div style="background: #18181b; padding: 10px; border-radius: 5px; margin-top: 5px;
                 max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 10px; color: #d4d4d8; border: 1px solid #3f3f46;">
                 {logs_content}
@@ -77,20 +77,19 @@ def log(msg, level="info"):
     ts = time.strftime('%H:%M:%S')
     line = f"{icons.get(level, 'ℹ️')} [{ts}] {msg}"
     install_log_lines.append(line)
-    # También imprimimos en consola por si la UI falla
     print(line)
 
-# --- AUTO-REPAIR (Kaggle Style) ---
+# --- AUTO-REPAIR ---
 def run_cmd(cmd, desc="", cwd=None):
     if desc: render_status(None, desc)
     result = subprocess.run(cmd, shell=isinstance(cmd, str), cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
-        log(f"Fallo en: {cmd if isinstance(cmd, str) else ' '.join(cmd)}", "err")
+        log(f"Failed: {cmd if isinstance(cmd, str) else ' '.join(cmd)}", "err")
         if result.stderr: log(result.stderr[:200], "err")
     return result
 
 def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
-    """Ejecuta un comando y muestra su salida en tiempo real en los logs de la UI"""
+    """Executes a command and shows its output in real-time in the UI logs"""
     if desc: render_status(progress_val or 50, desc)
     
     process = subprocess.Popen(
@@ -103,24 +102,31 @@ def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
         bufsize=1
     )
     
+    current_progress = progress_val
     for line in process.stdout:
         line = line.strip()
         if line:
-            # Filtrar líneas irrelevantes o muy largas si es necesario
+            # Parse progress if present
+            if "PROGRESS:" in line:
+                try:
+                    new_prog = float(line.split("PROGRESS:")[1].strip().replace("%", ""))
+                    current_progress = int(new_prog)
+                except: pass
+            
             if len(line) > 150: line = line[:147] + "..."
             log(line, "info")
-            if progress_val: render_status(progress_val, desc)
+            if current_progress: render_status(current_progress, desc)
             
     process.wait()
     return process.returncode
 
 def clean_environment():
-    """Limpieza selectiva para evitar conflictos de binarios sin romper el kernel de Colab"""
+    """Selective cleanup to avoid binary conflicts without breaking the Colab kernel"""
     if os.path.exists(MARKER_FILE):
-        log("Limpieza ya realizada anteriormente.", "info")
+        log("Environment already cleaned.", "info")
         return False
 
-    render_status(10, "Iniciando limpieza selectiva de entorno...", "warning")
+    render_status(10, "Starting selective environment cleanup...", "warning")
     
     bad_pkgs = [
         "numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", 
@@ -144,14 +150,14 @@ def clean_environment():
         if os.path.exists(tmp): shutil.rmtree(tmp, ignore_errors=True)
 
     with open(MARKER_FILE, "w") as f: f.write("done")
-    render_status(100, "Entorno limpio. REINICIANDO KERNEL...", "success")
+    render_status(100, "Environment cleaned. RESTARTING KERNEL...", "success")
     time.sleep(2)
     os._exit(0)
 
 def setup_drive():
-    """Configura persistencia en Google Drive de forma robusta"""
+    """Configures Google Drive persistence robustly"""
     if os.path.exists("/content/drive/MyDrive"):
-        log("Google Drive ya está montado.", "success")
+        log("Google Drive is already mounted.", "success")
         os.makedirs(DRIVE_PATH, exist_ok=True)
         target_cp = os.path.join(DRIVE_PATH, CHECKPOINTS_SUBDIR)
         os.makedirs(target_cp, exist_ok=True)
@@ -159,8 +165,8 @@ def setup_drive():
 
     try:
         from google.colab import drive
-        render_status(20, "Solicitando acceso a Google Drive...", "warning")
-        log("Revisa la ventana emergente de Google Drive (o usa el icono de carpeta a la izquierda).", "info")
+        render_status(20, "Requesting Google Drive access...", "warning")
+        log("Check the Google Drive popup (or use the folder icon on the left).", "info")
         drive.mount('/content/drive')
         
         if os.path.exists("/content/drive/MyDrive"):
@@ -171,20 +177,19 @@ def setup_drive():
     except Exception as e:
         error_msg = str(e)
         if "credential propagation" in error_msg:
-            log("⚠️ Error de credenciales. Intenta montarlo manualmente desde el icono de carpeta.", "warn")
+            log("⚠️ Credential error. Try mounting manually from the folder icon.", "warn")
         else:
-            log(f"No se pudo montar Google Drive ({error_msg}).", "warn")
+            log(f"Could not mount Google Drive ({error_msg}).", "warn")
         
-    log("Se usará almacenamiento temporal para esta sesión.", "info")
+    log("Using temporary storage for this session.", "info")
     return None
 
 def install_dependencies():
-    render_status(30, "Configurando entorno de dependencias...", "running")
+    render_status(30, "Configuring dependencies environment...", "running")
     
-    # 1. Intentar descargar Wheels desde HF (Ahorra tiempo de compilación)
-    # El repo arqdariogomez/difflocks-env es público, no requiere token.
+    # 1. Try downloading Wheels from HF (Saves compilation time)
     has_local_wheels = False
-    render_status(35, "Descargando wheels optimizados desde Hugging Face (Public)...", "running")
+    render_status(35, "Downloading optimized wheels from Hugging Face (Public)...", "running")
     try:
         from huggingface_hub import snapshot_download
         os.makedirs(WHEELS_DIR, exist_ok=True)
@@ -195,16 +200,16 @@ def install_dependencies():
             allow_patterns=["wheels/*.whl"]
         )
         if any(Path(WHEELS_DIR).glob("wheels/*.whl")):
-            log("Wheels optimizados descargados correctamente (Público).", "success")
+            log("Optimized wheels downloaded successfully.", "success")
             has_local_wheels = True
     except Exception as e:
-        log(f"No se pudieron obtener wheels de HF automáticamente. Se instalará normalmente.", "info")
+        log(f"Could not fetch wheels from HF. Installing normally.", "info")
 
-    # 2. Actualizar pip y herramientas base
+    # 2. Update pip and base tools
     run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org"])
     
-    # 3. Instalar Torch con CUDA específico
-    render_status(40, "Instalando PyTorch (CUDA optimized)...", "running")
+    # 3. Install Torch with specific CUDA
+    render_status(40, "Installing PyTorch (CUDA optimized)...", "running")
     torch_cmd = [
         sys.executable, "-m", "pip", "install", 
         "torch==2.4.0+cu121", "torchvision==0.19.0+cu121", 
@@ -215,9 +220,8 @@ def install_dependencies():
         torch_cmd.extend(["--find-links", os.path.join(WHEELS_DIR, "wheels")])
     run_cmd(torch_cmd)
 
-    # 4. Instalar requirements.txt (Optimizado para Colab)
-    render_status(60, "Instalando dependencias del estudio...", "running")
-    # Instalamos natten primero
+    # 4. Install requirements.txt (Optimized for Colab)
+    render_status(60, "Installing Studio dependencies...", "running")
     natten_cmd = [
         sys.executable, "-m", "pip", "install", 
         "natten==0.17.1+torch240cu121", 
@@ -228,7 +232,6 @@ def install_dependencies():
         natten_cmd.extend(["--find-links", os.path.join(WHEELS_DIR, "wheels")])
     run_cmd(natten_cmd)
     
-    # Instalamos el resto de requirements
     req_cmd = [
         sys.executable, "-m", "pip", "install", 
         "-r", "requirements.txt",
@@ -238,14 +241,14 @@ def install_dependencies():
         req_cmd.extend(["--find-links", os.path.join(WHEELS_DIR, "wheels")])
     run_cmd(req_cmd, cwd=REPO_DIR)
 
-    # 5. Asegurar versiones críticas
-    render_status(80, "Finalizando configuración...", "running")
+    # 5. Ensure critical versions
+    render_status(80, "Finalizing configuration...", "running")
     run_cmd([sys.executable, "-m", "pip", "install", "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3", "huggingface_hub"])
 
 
 def apply_device_fixes():
-    """Aplica parches de código para compatibilidad de dispositivos"""
-    render_status(85, "Aplicando parches de dispositivo...", "running")
+    """Applies code patches for device compatibility"""
+    render_status(85, "Applying device patches...", "running")
     codec_path = os.path.join(REPO_DIR, "models/strand_codec.py")
     util_path = os.path.join(REPO_DIR, "utils/strand_util.py")
     
@@ -260,8 +263,8 @@ def apply_device_fixes():
         with open(util_path, 'w') as f: f.write(content)
 
 def run_studio():
-    """Lanza la aplicación en un proceso aislado"""
-    render_status(90, "Iniciando DiffLocks Studio...", "success")
+    """Launches the application in an isolated process"""
+    render_status(90, "Starting DiffLocks Studio...", "success")
     
     runner_script = os.path.join(REPO_DIR, "colab_runner.py")
     with open(runner_script, "w") as f:
@@ -273,7 +276,7 @@ import sys
 import threading
 import time
 
-# Redirigir salida a un archivo para monitoreo paralelo
+# Redirect output to a file for parallel monitoring
 log_file = "/content/studio_output.log"
 sys.stdout = open(log_file, "w", buffering=1)
 sys.stderr = sys.stdout
@@ -294,7 +297,6 @@ if __name__ == "__main__":
         return original_launch(*args, **kwargs)
     Blocks.launch = launch_with_share
     
-    # Ejecutar main en un hilo para que no bloquee si hay errores extraños
     main()
 """)
 
@@ -307,9 +309,8 @@ if __name__ == "__main__":
         bufsize=1
     )
 
-    log("Buscando URL de Gradio...", "info")
+    log("Searching for Gradio URL...", "info")
     
-    # Thread para leer logs del archivo mientras el proceso corre
     def monitor_logs():
         log_path = "/content/studio_output.log"
         last_size = 0
@@ -321,10 +322,8 @@ if __name__ == "__main__":
                     for line in new_lines:
                         line = line.strip()
                         if line:
-                            # Solo mostrar logs importantes en la UI de "Últimos Logs"
                             if any(x in line.lower() for x in ["error", "exception", "failed", "loading", "public url"]):
                                 log(f"[Studio] {line}", "info")
-                            # Imprimir todo a la consola oculta de Colab para debug profundo
                             print(f"[Debug] {line}")
                     last_size = f.tell()
             time.sleep(1)
@@ -333,40 +332,39 @@ if __name__ == "__main__":
     threading.Thread(target=monitor_logs, daemon=True).start()
 
     for line in process.stdout:
-        # Imprimir todo a la consola estándar para que el usuario pueda ver si expande la celda
         print(line, end="")
         
         if "public URL:" in line:
             url = line.split("public URL:")[1].strip()
-            render_status(100, "🚀 STUDIO LISTO", "success")
+            render_status(100, "🚀 STUDIO READY", "success")
             display(HTML(f'''
                 <div style="background: #18181b; border: 2px solid #34d399; border-radius: 12px; padding: 20px; margin-top: 20px; font-family: sans-serif;">
                     <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
                         <span style="font-size: 32px;">✅</span>
-                        <span style="font-size: 24px; font-weight: 700; color: #34d399;">¡DiffLocks Studio en línea!</span>
+                        <span style="font-size: 24px; font-weight: 700; color: #34d399;">DiffLocks Studio Online!</span>
                     </div>
                     <div style="background: #27272a; padding: 15px; border-radius: 8px; border: 1px solid #3f3f46;">
-                        <p style="color: #a1a1aa; margin: 0 0 10px 0; font-size: 14px;">Accede a través de esta URL:</p>
+                        <p style="color: #a1a1aa; margin: 0 0 10px 0; font-size: 14px;">Access via this URL:</p>
                         <a href="{url}" target="_blank" style="color: #818cf8; font-size: 18px; font-weight: 600; text-decoration: none; word-break: break-all;">{url}</a>
                     </div>
-                    <p style="color: #71717a; font-size: 12px; margin-top: 15px;">⚠️ Mantén esta pestaña abierta mientras usas la aplicación.</p>
+                    <p style="color: #71717a; font-size: 12px; margin-top: 15px;">⚠️ Keep this tab open while using the app.</p>
                 </div>
             '''))
         if "Error" in line or "Exception" in line:
-            log(f"Error detectado: {line}", "err")
+            log(f"Error detected: {line}", "err")
 
-# --- FLUJO PRINCIPAL ---
+# --- MAIN FLOW ---
 try:
-    # 1. Limpieza
+    # 1. Cleaning
     clean_environment()
     
-    # 2. Setup Drive y Repo
+    # 2. Drive & Repo Setup
     cp_drive = setup_drive()
     if not os.path.exists(REPO_DIR):
-        render_status(25, "Clonando repositorio...", "running")
+        render_status(25, "Cloning repository...", "running")
         run_cmd(["git", "clone", REPO_URL, REPO_DIR])
     
-    # 3. Persistencia de Checkpoints
+    # 3. Checkpoints Persistence
     local_cp = os.path.join(REPO_DIR, CHECKPOINTS_SUBDIR)
     if cp_drive:
         if os.path.exists(local_cp) and not os.path.islink(local_cp):
@@ -374,27 +372,26 @@ try:
         if not os.path.exists(local_cp):
             os.makedirs(os.path.dirname(local_cp), exist_ok=True)
             os.symlink(cp_drive, local_cp)
-            log("Persistencia activada correctamente.", "success")
+            log("Persistence enabled successfully.", "success")
     else:
-        log("Almacenamiento temporal activado.", "info")
+        log("Temporary storage enabled.", "info")
         os.makedirs(local_cp, exist_ok=True)
 
-    # 4. Instalación y Parches
+    # 4. Installation & Patches
     install_dependencies()
     
-    # Descargar activos y checkpoints usando el script unificado
-    log("Verificando credenciales disponibles...", "info")
-    if os.environ.get("HF_TOKEN"): log("✅ HF_TOKEN detectado.", "success")
-    if os.environ.get("MESH_USER"): log("✅ MESH_USER detectado.", "success")
+    log("Checking available credentials...", "info")
+    if os.environ.get("HF_TOKEN"): log("✅ HF_TOKEN detected.", "success")
+    if os.environ.get("MESH_USER"): log("✅ MESH_USER detected.", "success")
     
-    render_status(82, "Descargando modelos y activos...", "running")
-    run_cmd_stream([sys.executable, "-u", "download_checkpoints.py"], desc="Descargando modelos y activos...", cwd=REPO_DIR, progress_val=82)
+    render_status(82, "Downloading models and assets...", "running")
+    run_cmd_stream([sys.executable, "-u", "download_checkpoints.py"], desc="Downloading models and assets...", cwd=REPO_DIR, progress_val=82)
     
     apply_device_fixes()
     
-    # 5. Ejecución
+    # 5. Execution
     run_studio()
 
 except Exception as e:
-    render_status(100, f"Error crítico: {str(e)}", "error")
+    render_status(100, f"Critical error: {str(e)}", "error")
     log(str(e), "err")
