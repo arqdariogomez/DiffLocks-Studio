@@ -54,34 +54,68 @@ try:
     points_4d[:, :3] = flat_pos
     points_4d[:, 3] = 1.0
 
-    # --- HAIR CREATION (Optimized for Blender 3.3+) ---
+    # --- HAIR CREATION (Optimized) ---
     print(f"🧬 Creating {num_strands} strands...")
     
-    # Check if we can use the new Curves object (much faster for 100k+ strands)
-    use_new_curves = hasattr(bpy.data, "curves") and float(bpy.app.version_string[:3]) >= 3.3
-    
-    if use_new_curves:
-        print("🚀 Using modern CURVES object (Geometry Nodes compatible)")
+    obj = None
+    # Try 1: Modern CURVES object (Blender 3.3+)
+    try:
+        # Some Blender builds have issues with the 'CURVES' enum even if version >= 3.3
+        print("🧪 Attempting modern CURVES object...")
         curve_data = bpy.data.curves.new(name="Hair", type='CURVES')
-        # Batch add curves and points
         curve_data.curves.add(num_strands)
         curve_data.points.add(num_strands * pts_per_strand)
-        
-        # Set point positions in one go
         curve_data.points.foreach_set('position', flat_pos.ravel())
         
-        # Set curve offsets (which points belong to which curve)
-        # Each curve has pts_per_strand points
         offsets = np.arange(0, (num_strands + 1) * pts_per_strand, pts_per_strand, dtype=np.int32)
         curve_data.curve_offsets.foreach_set(offsets)
         
         obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
-    else:
-        print("⚠️ Using legacy CURVE object (Slower for high strand counts)")
+        use_new_curves = True
+        print("🚀 Success: Using modern CURVES object")
+    except Exception as e:
+        print(f"ℹ️ Modern CURVES failed or not supported: {e}")
+        use_new_curves = False
+
+    # Try 2: Fast Mesh-to-Curve conversion (Fallback for all versions)
+    if obj is None:
+        print("🔄 Fallback: Creating via Mesh-to-Curve conversion (Fast)...")
+        try:
+            mesh_data = bpy.data.meshes.new("HairMesh")
+            
+            # Create edges for all strands
+            # Each strand has pts_per_strand points: (0,1), (1,2), ... (n-1, n)
+            edges = []
+            for s in range(num_strands):
+                offset = s * pts_per_strand
+                for p in range(pts_per_strand - 1):
+                    edges.append((offset + p, offset + p + 1))
+            
+            mesh_data.from_pydata(flat_pos, edges, [])
+            obj = bpy.data.objects.new("DiffLocks_Hair", mesh_data)
+            bpy.context.collection.objects.link(obj)
+            bpy.context.view_layer.objects.active = obj
+            obj.select_set(True)
+            
+            # Convert Mesh to Curve
+            bpy.ops.object.convert(target='CURVE')
+            obj = bpy.context.active_object
+            
+            # Set curve settings for the converted object
+            obj.data.dimensions = '3D'
+            obj.data.fill_mode = 'FULL'
+            obj.data.bevel_depth = 0.0
+            print("✅ Success: Created via Mesh conversion")
+        except Exception as e:
+            print(f"❌ Mesh conversion failed: {e}")
+            
+    # Try 3: Legacy Spline creation (Absolute last resort, very slow)
+    if obj is None:
+        print("⚠️ Final Fallback: Legacy CURVE object (Very slow for high strand counts)")
         curve_data = bpy.data.curves.new(name="Hair", type='CURVE')
         curve_data.dimensions = '3D'
         curve_data.fill_mode = 'FULL'
-        curve_data.bevel_depth = 0.0 # No bevel for speed unless requested
+        curve_data.bevel_depth = 0.0
         
         for i in range(num_strands):
             s = curve_data.splines.new('POLY') 
@@ -91,10 +125,16 @@ try:
             s.points.foreach_set('co', points_4d[start:end].ravel())
             
         obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
+        bpy.context.collection.objects.link(obj)
 
-    bpy.context.collection.objects.link(obj)
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
+    # Finalize object
+    if obj:
+        if obj.name not in bpy.context.collection.objects:
+            bpy.context.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+    else:
+        raise Exception("Failed to create hair object in Blender")
 
     # MATERIAL
     mat = create_material()
