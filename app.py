@@ -1322,6 +1322,24 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                 ### High-fidelity 3D hair generation from a single image.
                 *Platform: **{cfg.platform.upper()}** | Device: **{DEVICE}** | Precision: **float32***
             """)
+            
+            # --- BLENDER MISSING WARNING ---
+            if cfg.platform in ['pinokio', 'local'] and not cfg.blender_exe.exists():
+                gr.HTML(f"""
+                    <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 20px;">🟧</span>
+                            <div>
+                                <h4 style="color: #fbbf24; margin: 0; font-size: 14px;">Blender not found!</h4>
+                                <p style="color: #d4d4d8; margin: 4px 0 0 0; font-size: 12px;">
+                                    Exports to <b>.blend, .abc, and .usd</b> will not work. 
+                                    <a href="https://www.blender.org/download/" target="_blank" style="color: #fbbf24; text-decoration: underline;">Download Blender 4.2+</a> 
+                                    and place it in the <code>blender/</code> folder or install it on your system.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                """)
         with gr.Column(scale=2):
             gr.Markdown(f"<div style='text-align: right; color: #71717a; font-size: 12px;'>v1.0.1-optimized</div>")
 

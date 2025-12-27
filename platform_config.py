@@ -131,15 +131,27 @@ class Config:
         # Robust Blender check for local/pinokio
         if not blender_exe.exists() and platform in ['local', 'pinokio']:
             import shutil
-            system_blender = shutil.which("blender")
-            if system_blender:
-                blender_exe = Path(system_blender)
-            elif sys.platform == 'win32':
-                for v in ["4.2", "4.1", "4.0", "3.6"]:
-                    p = Path(fr"C:\Program Files\Blender Foundation\Blender {v}\blender.exe")
-                    if p.exists():
-                        blender_exe = p
-                        break
+            
+            # 1. Check if it's inside the blender/ folder but maybe nested (common after zip extraction)
+            blender_root = repo_dir / "blender"
+            if blender_root.exists():
+                ext = ".exe" if sys.platform == 'win32' else ""
+                matches = list(blender_root.rglob(f"blender{ext}"))
+                if matches:
+                    blender_exe = matches[0]
+                    print(f"🎯 Blender found in subfolder: {blender_exe}")
+            
+            # 2. Check system PATH
+            if not blender_exe.exists():
+                system_blender = shutil.which("blender")
+                if system_blender:
+                    blender_exe = Path(system_blender)
+                elif sys.platform == 'win32':
+                    for v in ["4.3", "4.2", "4.1", "4.0", "3.6"]:
+                        p = Path(fr"C:\Program Files\Blender Foundation\Blender {v}\blender.exe")
+                        if p.exists():
+                            blender_exe = p
+                            break
 
         import torch
         return Config(
