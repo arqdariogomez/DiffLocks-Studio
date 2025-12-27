@@ -270,8 +270,19 @@ import os
 import matplotlib
 matplotlib.use('Agg', force=True)
 import sys
+import threading
+import time
+
+# Redirigir salida a un archivo para monitoreo paralelo
+log_file = "/content/studio_output.log"
+sys.stdout = open(log_file, "w", buffering=1)
+sys.stderr = sys.stdout
+
+os.chdir('""" + REPO_DIR + """')
 sys.path.append(os.getcwd())
+
 from app import main
+
 if __name__ == "__main__":
     import gradio as gr
     from gradio.blocks import Blocks
@@ -279,8 +290,11 @@ if __name__ == "__main__":
     def launch_with_share(*args, **kwargs):
         kwargs['share'] = True
         kwargs['server_name'] = '0.0.0.0'
+        kwargs['show_error'] = True
         return original_launch(*args, **kwargs)
     Blocks.launch = launch_with_share
+    
+    # Ejecutar main en un hilo para que no bloquee si hay errores extraños
     main()
 """)
 
@@ -294,8 +308,34 @@ if __name__ == "__main__":
     )
 
     log("Buscando URL de Gradio...", "info")
+    
+    # Thread para leer logs del archivo mientras el proceso corre
+    def monitor_logs():
+        log_path = "/content/studio_output.log"
+        last_size = 0
+        while process.poll() is None:
+            if os.path.exists(log_path):
+                with open(log_path, "r") as f:
+                    f.seek(last_size)
+                    new_lines = f.readlines()
+                    for line in new_lines:
+                        line = line.strip()
+                        if line:
+                            # Solo mostrar logs importantes en la UI de "Últimos Logs"
+                            if any(x in line.lower() for x in ["error", "exception", "failed", "loading", "public url"]):
+                                log(f"[Studio] {line}", "info")
+                            # Imprimir todo a la consola oculta de Colab para debug profundo
+                            print(f"[Debug] {line}")
+                    last_size = f.tell()
+            time.sleep(1)
+
+    import threading
+    threading.Thread(target=monitor_logs, daemon=True).start()
+
     for line in process.stdout:
+        # Imprimir todo a la consola estándar para que el usuario pueda ver si expande la celda
         print(line, end="")
+        
         if "public URL:" in line:
             url = line.split("public URL:")[1].strip()
             render_status(100, "🚀 STUDIO LISTO", "success")
