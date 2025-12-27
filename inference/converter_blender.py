@@ -58,6 +58,11 @@ try:
     curve_data = bpy.data.curves.new(name="Hair", type='CURVE')
     curve_data.dimensions = '3D'
     
+    # --- CURVE SETTINGS (Legacy for compatibility) ---
+    curve_data.fill_mode = 'FULL'
+    curve_data.bevel_depth = 0.0001 # Give it some thickness for export
+    curve_data.bevel_resolution = 0
+    
     for i in range(num_strands):
         s = curve_data.splines.new('POLY') 
         s.points.add(pts_per_strand - 1)
@@ -70,11 +75,16 @@ try:
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
 
-    # CONVERT TO GEOMETRY (New Curves system in Blender 3.3+)
-    # Note: New CURVES type is much more efficient for hair
+    # CONVERT TO GEOMETRY (Optional: New Curves system in Blender 3.3+)
+    # We try to convert but if it fails or if we are in a version that handles ABC poorly, we stay legacy
+    is_new_curves = False
     try:
-        bpy.ops.object.convert(target='CURVES', keep_original=False)
-        print("✨ Converted to new CURVES system")
+        # Only convert to new CURVES if we're not explicitly asked for legacy compatibility in ABC
+        # For now, let's keep it legacy for better ABC/USD support across platforms
+        # bpy.ops.object.convert(target='CURVES', keep_original=False)
+        # is_new_curves = True
+        # print("✨ Converted to new CURVES system")
+        print("ℹ️ Keeping as legacy CURVE for maximum compatibility with ABC/USD")
     except:
         print("⚠️ Conversion to CURVES failed, keeping as legacy CURVE")
     
@@ -131,12 +141,14 @@ try:
         out = f"{output_base}.abc"
         print(f"📦 Exporting Alembic: {out}")
         try:
-            # Default attempt with hair support
+            # For legacy CURVE objects with bevel, we want standard curve export.
+            # 'export_hair' in Blender Alembic refers to Particle Systems.
+            # 'curves' refers to Curve objects.
             bpy.ops.wm.alembic_export(
                 filepath=out, 
                 selected=True, 
                 start=1, end=1,
-                export_hair=True,
+                export_hair=False, # We use actual Curve objects, not Particles
                 export_particles=False,
                 as_background_job=False,
                 evaluation_mode='VIEWPORT'

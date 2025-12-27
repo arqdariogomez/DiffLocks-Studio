@@ -168,7 +168,7 @@ def download_from_meshcapade(user, password, checkpoints_dir):
                         # Log every 25MB or every 10%
                         if downloaded - last_log > (1024*1024*25): 
                             pct = (downloaded / total_size * 100) if total_size > 0 else 0
-                            print(f"   ... {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)")
+                            print(f"   ... {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)", flush=True)
                             last_log = downloaded
                 
                 print(f"📂 Extracting {name}...")
@@ -303,6 +303,53 @@ def backup_to_hf(checkpoints_dir, token):
         print(f"⚠️ HF Backup skipped: {e}")
         return None
 
+def attempt_direct_download(url, checkpoints_dir, token=None):
+    """Attempts to download checkpoints from a direct URL (zip)."""
+    try:
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        zip_path = checkpoints_dir / "downloaded_checkpoints.zip"
+        
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://difflocks.is.tue.mpg.de/"
+        })
+        
+        print(f"⏳ Connecting to {url}...", flush=True)
+        r = session.get(url, stream=True, timeout=60, allow_redirects=True)
+        
+        if r.status_code == 200:
+            content_type = r.headers.get('Content-Type', '').lower()
+            if 'html' in content_type:
+                print("❌ Error: Received HTML instead of a zip file. Link might be expired.", flush=True)
+                return False
+
+            total_size = int(r.headers.get('content-length', 0))
+            print(f"📦 File size: {total_size / (1024*1024):.1f} MB", flush=True)
+            
+            with open(zip_path, 'wb') as f:
+                downloaded = 0
+                last_log = 0
+                for chunk in r.iter_content(chunk_size=1024*1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if downloaded - last_log > (1024*1024*25): # Log every 25MB
+                            pct = (downloaded / total_size * 100) if total_size > 0 else 0
+                            print(f"   ... {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)", flush=True)
+                            last_log = downloaded
+            
+            print(f"✅ Download complete.", flush=True)
+            if unzip_checkpoints(zip_path, checkpoints_dir):
+                if zip_path.exists(): os.remove(zip_path)
+                backup_to_hf(checkpoints_dir, token)
+                return True
+        else:
+            print(f"❌ Download failed (Status: {r.status_code})", flush=True)
+    except Exception as e:
+        print(f"⚠️ Error during direct download: {e}", flush=True)
+    return False
+
 def main():
     parser = argparse.ArgumentParser(description="DiffLocks Asset Downloader")
     parser.add_argument("--meshcapade", action="store_true", help="Use Meshcapade official login")
@@ -385,9 +432,14 @@ def main():
                 print("✅ Checkpoints extracted from local zip!")
                 return True
 
-    # 3. Try private HF repo if specified (Alternative to Google Drive for HF/Colab)
-    # Note: On Kaggle, if you have a dataset connected, it's found in step 2 (Faster).
-    # This step is the universal fallback for Colab, HF Spaces, or local without datasets.
+    # 3. Try Direct Download URL if provided (Highest Priority for manual overrides)
+    direct_url = os.environ.get("CHECKPOINTS_URL") or os.environ.get("MESH_DOWNLOAD_URL")
+    if direct_url:
+        print(f"🚀 Attempting direct download from CHECKPOINTS_URL: {direct_url}")
+        if attempt_direct_download(direct_url, checkpoints_dir, token):
+            return True
+
+    # 4. Try HF repo (Private or Mirror)
     hf_ckpt_repo = os.environ.get("HF_CHECKPOINTS_REPO")
     
     # Auto-detect private repo if not specified but token is present
@@ -402,10 +454,20 @@ def main():
             hf_ckpt_repo = potential_repo
             print(f"✨ Auto-detected your private backup repo: {hf_ckpt_repo}")
         except:
-            # Fallback to a community mirror if everything fails and no credentials
-            if not os.environ.get("MESH_USER") and not os.environ.get("MESH_PASS"):
-                print("💡 No credentials found. Attempting to use a community mirror for checkpoints...")
-                hf_ckpt_repo = "arqdariogomez/difflocks-checkpoints-mirror"
+            pass
+
+    # If still no repo, use the community mirror (Safe fallback)
+    if not hf_ckpt_repo:
+        # Check if the community mirror exists before assigning it
+        potential_mirror = "arqdariogomez/difflocks-checkpoints-mirror"
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi(token=token)
+            api.repo_info(repo_id=potential_mirror, repo_type="dataset")
+            hf_ckpt_repo = potential_mirror
+            print(f"💡 Community mirror detected: {hf_ckpt_repo}")
+        except:
+            print("ℹ️ Community mirror not found or inaccessible. Skipping mirror fallback.")
 
     if hf_ckpt_repo:
         print(f"🔹 Attempting to download checkpoints from HF repo: {hf_ckpt_repo}")
@@ -431,7 +493,7 @@ def main():
         except Exception as e:
             print(f"⚠️ Error downloading from HF repo {hf_ckpt_repo}: {e}")
 
-    # 4. Try Meshcapade login if credentials provided
+    # 5. Try Meshcapade login if credentials provided (Last resort due to 403 risk)
     user = os.environ.get("MESH_USER")
     password = os.environ.get("MESH_PASS")
     
@@ -442,62 +504,13 @@ def main():
             backup_to_hf(checkpoints_dir, token)
             return True
         else:
-            print("❌ Meshcapade download failed. Moving to fallback...")
+            print("❌ Meshcapade download failed (Likely 403 Forbidden).")
     
-    # 5. Fallback: Try official MPG link or direct download URL if provided
+    # 6. Fallback: Try official MPG link as absolute last resort
     mpg_url = "https://download.is.tue.mpg.de/download.php?domain=difflocks&sfile=difflocks_checkpoints.zip"
-    direct_url = os.environ.get("CHECKPOINTS_URL") or os.environ.get("MESH_DOWNLOAD_URL") or mpg_url
-    
-    if direct_url:
-        print(f"🚀 Attempting direct download from: {direct_url}")
-        try:
-            # Check if directory exists
-            checkpoints_dir.mkdir(parents=True, exist_ok=True)
-            
-            zip_path = checkpoints_dir / "downloaded_checkpoints.zip"
-            
-            # Use a session with headers for better compatibility with MPG server
-            session = requests.Session()
-            session.headers.update({
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://difflocks.is.tue.mpg.de/"
-            })
-            
-            # Use stream=True for large files
-            print("⏳ Connecting to server...")
-            r = session.get(direct_url, stream=True, timeout=60, allow_redirects=True)
-            
-            if r.status_code == 200:
-                # Check if we actually got a zip or an HTML error page
-                content_type = r.headers.get('Content-Type', '').lower()
-                if 'html' in content_type:
-                    print("❌ Error: Received HTML instead of a zip file. The download link might be expired or restricted.")
-                    return False
-
-                total_size = int(r.headers.get('content-length', 0))
-                print(f"📦 File size: {total_size / (1024*1024):.1f} MB")
-                with open(zip_path, 'wb') as f:
-                    downloaded = 0
-                    last_log = 0
-                    for chunk in r.iter_content(chunk_size=1024*1024): # 1MB chunks
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            # Log every 50MB
-                            if downloaded - last_log > (1024*1024*50):
-                                pct = (downloaded / total_size * 100) if total_size > 0 else 0
-                                print(f"   ... {downloaded / (1024*1024):.1f} MB downloaded ({pct:.1f}%)")
-                                last_log = downloaded
-                
-                print(f"✅ Download complete ({downloaded / (1024*1024):.1f} MB).")
-                if unzip_checkpoints(zip_path, checkpoints_dir):
-                    if zip_path.exists(): os.remove(zip_path)
-                    backup_to_hf(checkpoints_dir, token)
-                    return True
-            else:
-                print(f"❌ Direct download failed (Status: {r.status_code})")
-        except Exception as e:
-            print(f"⚠️ Error during direct download: {e}")
+    print(f"🚀 Attempting direct download from official MPG source...")
+    if attempt_direct_download(mpg_url, checkpoints_dir, token):
+        return True
 
     print("\n❌ [REQUIRED] Checkpoints missing!")
     print("💡 Due to licensing (Non-Commercial), you must provide the model weights.")

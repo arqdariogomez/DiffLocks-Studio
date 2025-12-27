@@ -388,7 +388,7 @@ try:
     if os.environ.get("MESH_USER"): log("✅ MESH_USER detectado.", "success")
     
     render_status(82, "Descargando modelos y activos...", "running")
-    run_cmd_stream([sys.executable, "download_checkpoints.py"], desc="Descargando modelos y activos...", cwd=REPO_DIR, progress_val=82)
+    run_cmd_stream([sys.executable, "-u", "download_checkpoints.py"], desc="Descargando modelos y activos...", cwd=REPO_DIR, progress_val=82)
     
     apply_device_fixes()
     
