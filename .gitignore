@@ -16,5 +16,6 @@ checkpoints_safe/
 *.blend1
 torch_cache/
 
-# Private launchers and notes
-launchers/
+# Private notes
+# launchers/ (removed block to allow official launchers)
+# trackers/ (if any)
