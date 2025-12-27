@@ -70,13 +70,7 @@ class Config:
         platform: PlatformType = 'local'
         data_dir = None
         
-        if Path("/kaggle").exists():
-            platform = 'kaggle'
-            work_dir = Path("/kaggle/working")
-            repo_dir = work_dir / "DiffLocks-Studio"
-            blender_exe = work_dir / "blender/blender"
-            needs_share = True
-        elif 'COLAB_GPU' in os.environ or Path("/content").exists():
+        if 'COLAB_GPU' in os.environ or Path("/content").exists():
             platform = 'colab'
             work_dir = Path("/content")
             repo_dir = work_dir / "DiffLocks-Studio"
@@ -85,6 +79,12 @@ class Config:
             # Colab often uses Drive for persistence
             if Path("/content/drive/MyDrive").exists():
                 data_dir = Path("/content/drive/MyDrive/DiffLocks_Data")
+        elif Path("/kaggle").exists():
+            platform = 'kaggle'
+            work_dir = Path("/kaggle/working")
+            repo_dir = work_dir / "DiffLocks-Studio"
+            blender_exe = work_dir / "blender/blender"
+            needs_share = True
         elif any(k in os.environ for k in ['SPACE_ID', 'SPACE_REPO_NAME', 'HF_SPACE_ID']): 
             platform = 'huggingface'
             work_dir = Path("/app") if Path("/app").exists() else (Path("/home/user/app") if Path("/home/user/app").exists() else Path.cwd())

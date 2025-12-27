@@ -1,12 +1,11 @@
 --extra-index-url https://download.pytorch.org/whl/cu121
 --find-links https://shi-labs.com/natten/wheels/
 --trusted-host shi-labs.com
-torch==2.4.0
-torchvision==0.19.0
+# Torch installed separately in launchers for better performance
 natten==0.17.1+torch240cu121
 numpy<2.0.0
-gradio==3.50.2
-Pillow==10.4.0
+gradio>=4.0.0
+Pillow>=10.0.0
 opencv-contrib-python==4.10.0.84
 opencv-python-headless==4.10.0.84
 dctorch

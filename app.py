@@ -452,11 +452,19 @@ def find_checkpoints_everywhere():
                 print(f"  - Directory {d} exists. Subfolders: {contents[:10]}")
                 
                 # Check for files directly in these folders
-                pth_files = list(d.glob("**/scalp_*.pth"))
-                pt_files = list(d.glob("**/strand_codec.pt"))
-                if pth_files: print(f"    - Found {len(pth_files)} .pth files deep inside {d}")
-                if pt_files: print(f"    - Found {len(pt_files)} .pt files deep inside {d}")
-            except: pass
+                pth_files = list(d.rglob("scalp_*.pth"))
+                pt_files = list(d.rglob("strand_codec.pt"))
+                if not pt_files: pt_files = list(d.rglob("*.pt"))
+                
+                if pth_files: print(f"    - Found {len(pth_files)} .pth files inside {d}: {[f.name for f in pth_files[:3]]}")
+                if pt_files: print(f"    - Found {len(pt_files)} .pt files inside {d}: {[f.name for f in pt_files[:3]]}")
+                
+                # DIAGNOSTIC: Check /data/checkpoints specifically
+                if str(d) == "/data" and Path("/data/checkpoints").exists():
+                    sub = [p.name for p in Path("/data/checkpoints").iterdir()]
+                    print(f"    - /data/checkpoints exists. Contents: {sub}")
+            except Exception as e:
+                print(f"    - Error listing {d}: {e}")
                     
     return False
 
@@ -1187,7 +1195,7 @@ dark_theme = gr.themes.Base(
 with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) as demo:
     # --- 8.0. MISSING CHECKPOINTS NOTICE ---
     if not ckpt_files:
-        with gr.Box():
+        with gr.Group():
             gr.Markdown(f"""
                 <div style="padding: 20px; border: 2px solid #fbbf24; border-radius: 12px; background: rgba(251, 191, 36, 0.05);">
                     <h2 style="color: #fbbf24; margin-top: 0;">💇‍♀️ Welcome to DiffLocks Studio!</h2>
@@ -1221,15 +1229,72 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                     status_download = gr.Markdown("*(Click only if you have already set up your HF_TOKEN or Meshcapade credentials)*")
             
             def manual_download():
+                capture = VerboseLogCapture().start()
                 try:
                     success = download_checkpoints_hf()
+                    logs = capture.get_logs()
+                    capture.stop()
+                    
+                    log_str = "\n".join(logs[-15:])
                     if success:
-                        return "✅ **Success!** Checkpoints found or downloaded. **Please restart/refresh the Space** to load them into memory."
-                    return "❌ **Failed:** Could not find checkpoints. Please check your credentials and try again."
+                        return f"✅ **Success!** Checkpoints found or downloaded.\n\n**Recent Logs:**\n```\n{log_str}\n```\n\n**Please restart/refresh the Space** to load them."
+                    return f"❌ **Failed:** Could not find checkpoints.\n\n**Recent Logs:**\n```\n{log_str}\n```"
                 except Exception as e:
+                    capture.stop()
                     return f"❌ **Error:** {str(e)}"
             
             manual_download_btn.click(fn=manual_download, outputs=status_download)
+
+    # --- 8.0.1 DIAGNOSTICS TAB ---
+    with gr.Accordion("🔍 System Diagnostics (Click to debug paths)", open=False):
+        diag_btn = gr.Button("Run Path Diagnostic")
+        diag_output = gr.Code(label="Filesystem Structure", language="markdown", interactive=False)
+        
+        def run_diag():
+            import os
+            from pathlib import Path
+            report = []
+            report.append(f"# Platform: {cfg.platform}")
+            report.append(f"CWD: {os.getcwd()}")
+            
+            # Check env vars (masking passwords)
+            report.append("\n## Environment Variables")
+            for k in ["SPACE_ID", "SPACE_REPO_NAME", "HF_SPACE_ID", "MESH_USER", "MESH_PASS", "HF_TOKEN"]:
+                v = os.environ.get(k)
+                if v:
+                    # Mask value
+                    masked = v[:3] + "*" * (len(v) - 3) if len(v) > 3 else "***"
+                    report.append(f"- {k}: `{masked}`")
+                else:
+                    report.append(f"- {k}: (not set)")
+
+            paths_to_check = [
+                "/app", "/home/user/app", "/data", "/data/checkpoints", 
+                "./checkpoints", str(cfg.repo_dir), str(cfg.checkpoints_dir), "/tmp"
+            ]
+            
+            for p_str in dict.fromkeys(paths_to_check):
+                p = Path(p_str)
+                report.append(f"\n## Checking: {p_str}")
+                if not p.exists():
+                    report.append("  - Status: ❌ NOT FOUND")
+                    continue
+                
+                report.append(f"  - Status: ✅ EXISTS (is_dir: {p.is_dir()}, is_link: {p.is_link()})")
+                try:
+                    items = list(p.iterdir())
+                    report.append(f"  - Contents ({len(items)} items):")
+                    for item in items[:15]:
+                        suffix = "/" if item.is_dir() else ""
+                        link = f" -> {os.readlink(item)}" if item.is_link() else ""
+                        report.append(f"    - {item.name}{suffix}{link}")
+                    if len(items) > 15: report.append("    - ... (truncated)")
+                except Exception as e:
+                    report.append(f"  - Error listing: {e}")
+            
+            return "\n".join(report)
+        
+        diag_btn.click(fn=run_diag, outputs=diag_output)
 
     # --- 8.1. CPU WARNING BANNER ---
     if IS_CPU:
