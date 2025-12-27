@@ -56,6 +56,22 @@ except ImportError:
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IS_CPU = (DEVICE == "cpu")
 
+# Optimization flags
+if not IS_CPU:
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+# Detect NATTEN
+try:
+    import natten
+    HAS_NATTEN = True
+    print(f"✅ NATTEN detected (Version: {natten.__version__})")
+except ImportError:
+    HAS_NATTEN = False
+    print("⚠️ NATTEN not found. Inference will be EXTREMELY SLOW (160s+/it).")
+    print("💡 Tip for Pinokio/Local: Try installing it with: pip install natten")
+    print("   Or if using Pinokio: Click 'Terminal' and run 'bin\\python.exe -m pip install natten'")
+
 # --- 2. KAGGLE UI CONSTANTS ---
 PHASES = [
     ("init", "🚀 Initializing", 5, 0.00, 0.01),
@@ -371,20 +387,59 @@ def find_checkpoints_everywhere():
                 vae_files = v
                 return True
 
-    # Final attempt: recursive search in all search_dirs
+    # Final attempt: deep recursive search for ANY scalp_*.pth and ANY *.pt
     print("🔍 [RE-SCAN] Doing a deep recursive search in all potential paths...")
+    found_pth = None
+    found_pt = None
+    
     for d in search_dirs:
         if not d.exists(): continue
-        for p in d.rglob("scalp_*.pth"):
-            potential_dir = p.parent.parent
-            v = list((potential_dir / "strand_vae").glob("*.pt"))
-            if v:
-                checkpoints_dir = potential_dir
-                cfg.checkpoints_dir = potential_dir
-                ckpt_files = list((potential_dir / "difflocks_diffusion").glob("scalp_*.pth"))
-                vae_files = v
-                return True
+        
+        # Look for the diffusion model
+        if not found_pth:
+            pths = list(d.rglob("scalp_*.pth"))
+            if pths:
+                found_pth = pths[0]
+                print(f"🔎 Found diffusion: {found_pth}")
                 
+        # Look for the VAE model
+        if not found_pt:
+            pts = list(d.rglob("strand_codec.pt"))
+            if not pts:
+                pts = list(d.rglob("*.pt"))
+                # Filter out things that are definitely not the VAE if possible
+                pts = [p for p in pts if "vae" in str(p).lower() or "codec" in str(p).lower()]
+            
+            if pts:
+                found_pt = pts[0]
+                print(f"🔎 Found VAE: {found_pt}")
+                
+        if found_pth and found_pt:
+            # We found both, but they might be in different places
+            # The model loader expects them as paths
+            ckpt_files = [found_pth]
+            vae_files = [found_pt]
+            # Use the parent of the diffusion model as the "checkpoints_dir" for reference
+            checkpoints_dir = found_pth.parent.parent
+            cfg.checkpoints_dir = checkpoints_dir
+            return True
+                
+    # If we are here, we failed. Let's log what we DID find to help debug
+    print("❌ [SEARCH] No valid checkpoint pairs found.")
+    for d in search_dirs:
+        if d.exists():
+            try:
+                # Log top level folders to help diagnose path issues
+                contents = [p.name for p in d.iterdir() if p.is_dir()]
+                print(f"  - Directory {d} exists. Subfolders: {contents[:10]}")
+                
+                # Check for files directly in these folders
+                pth_files = list(d.glob("**/scalp_*.pth"))
+                pt_files = list(d.glob("**/strand_codec.pt"))
+                if pth_files: print(f"    - Found {len(pth_files)} .pth files deep inside {d}")
+                if pt_files: print(f"    - Found {len(pt_files)} .pt files deep inside {d}")
+            except: pass
+                    
     return False
 
 def download_checkpoints_hf():
@@ -464,8 +519,10 @@ def download_checkpoints_hf():
 
         # Search for downloaded folders (they might be nested)
         found_any = False
+        # Extended search for folders
         for folder_name in ["difflocks_diffusion", "strand_vae", "rgb2material", "assets"]:
             source_folder = None
+            # Search recursively for the folder name
             for p in download_dir.rglob(folder_name):
                 if p.is_dir():
                     source_folder = p
@@ -477,7 +534,7 @@ def download_checkpoints_hf():
                     print(f"♻️ Overwriting existing {folder_name} in {final_target}")
                     shutil.rmtree(dest)
                 
-                # Move the folder to its exact destination, not its parent
+                # Move the folder to its exact destination
                 shutil.move(str(source_folder), str(dest))
                 print(f"✅ Moved {folder_name} to {dest}")
                 found_any = True
@@ -487,14 +544,12 @@ def download_checkpoints_hf():
             find_checkpoints_everywhere()
             print(f"🎯 [HF SPACES] Setup complete. Checkpoints at: {cfg.checkpoints_dir}")
             
-            # Clean up
+            # Clean up temporary download dir if not persistent
             if download_dir.exists() and not str(download_dir).startswith("/data"):
-                shutil.rmtree(download_dir)
+                try: shutil.rmtree(download_dir)
+                except: pass
             return True
         
-        return False
-    except Exception as e:
-        print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
         return False
     except Exception as e:
         print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
@@ -538,11 +593,21 @@ def load_model():
     if not ckpt_files or not vae_files:
         print("🔍 [RE-SCAN] Looking for checkpoints before loading model...")
         if not find_checkpoints_everywhere():
-            error_msg = f"Missing checkpoints! Search path: {checkpoints_dir.absolute()}"
+            error_msg = "Critical Error: Checkpoints not found!"
             print(f"❌ {error_msg}")
+            print(f"   Searched in: {checkpoints_dir.absolute()}")
+            
+            # Detailed hint based on what's missing
+            if not ckpt_files: print("   - Missing: scalp_*.pth (Diffusion Model)")
+            if not vae_files: print("   - Missing: strand_codec.pt (VAE Model)")
+            
             # If we are in HF Spaces, suggest setting secrets
-            if cfg.platform == 'huggingface':
+            if cfg.platform == 'huggingface' or 'SPACE_ID' in os.environ:
                 print("💡 Hint: If the repo is private, set HF_TOKEN in Space Secrets.")
+                print("💡 Hint: If using external storage, ensure MESH_USER and MESH_PASS are set.")
+            else:
+                print("💡 Hint for Pinokio/Local: Ensure you have downloaded the checkpoints and placed them in the 'checkpoints' folder.")
+                
             raise FileNotFoundError(error_msg)
     
     print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
@@ -854,7 +919,15 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
     job_dir.mkdir(parents=True, exist_ok=True)
     
     log_capture.add_log(f"🚀 JOB STARTED: {job_id}")
-    log_capture.add_log(f"Device: {DEVICE} | Precision: float32")
+    
+    # Check GPU availability and details
+    gpu_info = "CPU (No GPU detected)"
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_vram = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        gpu_info = f"GPU: {gpu_name} ({gpu_vram:.1f}GB VRAM)"
+    
+    log_capture.add_log(f"Device: {DEVICE} | {gpu_info} | Precision: float32")
     
     try:
         if image is None: raise ValueError("Please upload an image first!")

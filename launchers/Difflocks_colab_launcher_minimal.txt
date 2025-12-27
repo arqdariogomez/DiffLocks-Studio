@@ -13,7 +13,17 @@ import time
 import shutil
 import subprocess
 import site
+import re
+import contextlib
+import warnings
+import logging
 from pathlib import Path
+
+# --- SILENCING (Kaggle Style) ---
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+warnings.filterwarnings("ignore")
+for name in ["natten", "gradio", "httpx", "uvicorn", "matplotlib", "PIL", "mediapipe"]:
+    logging.getLogger(name).setLevel(logging.CRITICAL)
 
 # --- CONFIGURACIÓN ---
 REPO_URL = "https://github.com/pinokiofactory/DiffLocks-Studio.git"
@@ -22,9 +32,60 @@ DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
 CHECKPOINTS_SUBDIR = "checkpoints/difflocks_diffusion"
 MARKER_FILE = "/content/.clean_done"
 
+# --- UI DASHBOARD (Kaggle Style) ---
+from IPython.display import display, HTML, clear_output
+
+install_log_lines = []
+
+def render_status(progress, message, status="running"):
+    colors = {"running": "#818cf8", "success": "#34d399", "error": "#f87171", "warning": "#fbbf24"}
+    color = colors.get(status, "#818cf8")
+    
+    logs_html = ""
+    if install_log_lines:
+        logs_content = "<br>".join(install_log_lines[-10:])
+        logs_html = f"""
+        <details style="margin-top: 10px;" open>
+            <summary style="cursor: pointer; color: #a1a1aa; font-size: 11px;">📋 Últimos Logs</summary>
+            <div style="background: #18181b; padding: 10px; border-radius: 5px; margin-top: 5px;
+                max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 10px; color: #d4d4d8; border: 1px solid #3f3f46;">
+                {logs_content}
+            </div>
+        </details>
+        """
+    
+    html = f"""
+    <div style="background: #27272a; border-left: 5px solid {color}; border-radius: 8px; padding: 15px; margin-bottom: 10px; border: 1px solid #3f3f46; font-family: sans-serif;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 18px; font-weight: 700; color: #fafafa;">🚀 DiffLocks Studio - Colab Edition</span>
+            <span style="background: {color}33; color: {color}; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;">{progress}%</span>
+        </div>
+        <div style="color: #e4e4e7; font-size: 14px; margin-bottom: 10px;">{message}</div>
+        <div style="background: #3f3f46; height: 4px; border-radius: 2px; overflow: hidden;">
+            <div style="width: {progress}%; height: 100%; background: {color}; transition: width 0.3s ease;"></div>
+        </div>
+        {logs_html}
+    </div>
+    """
+    clear_output(wait=True)
+    display(HTML(html))
+
 def log(msg, level="info"):
-    colors = {"info": "\033[94m", "success": "\033[92m", "warn": "\033[93m", "err": "\033[91m", "reset": "\033[0m"}
-    print(f"{colors.get(level, '')}[{level.upper()}] {msg}{colors['reset']}")
+    icons = {"info": "ℹ️", "success": "✅", "warn": "⚠️", "err": "❌"}
+    ts = time.strftime('%H:%M:%S')
+    line = f"{icons.get(level, 'ℹ️')} [{ts}] {msg}"
+    install_log_lines.append(line)
+    # También imprimimos en consola por si la UI falla
+    print(line)
+
+# --- AUTO-REPAIR (Kaggle Style) ---
+def run_cmd(cmd, desc="", cwd=None):
+    if desc: render_status(None, desc)
+    result = subprocess.run(cmd, shell=isinstance(cmd, str), cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        log(f"Fallo en: {cmd if isinstance(cmd, str) else ' '.join(cmd)}", "err")
+        if result.stderr: log(result.stderr[:200], "err")
+    return result
 
 def clean_environment():
     """Limpieza selectiva para evitar conflictos de binarios sin romper el kernel de Colab"""
@@ -32,37 +93,32 @@ def clean_environment():
         log("Limpieza ya realizada anteriormente.", "info")
         return False
 
-    log("Iniciando limpieza selectiva de entorno (User-site only)...", "warn")
+    render_status(10, "Iniciando limpieza selectiva de entorno...", "warning")
     
-    # Paquetes que suelen causar conflictos de binarios (.so)
     bad_pkgs = [
         "numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", 
         "matplotlib", "matplotlib.libs", "gradio", "PIL", "cv2", "skimage", "natten",
         "pydantic", "pydantic_core"
     ]
     
-    # IMPORTANTE: Solo limpiamos el directorio del USUARIO (~/.local)
-    # Limpiar el directorio del sistema (/usr/local) es lo que rompe el kernel de Colab
     user_site = site.getusersitepackages()
     if user_site:
         s_path = Path(user_site)
         if s_path.exists():
-            log(f"Limpiando paquetes conflictivos en: {s_path}", "info")
             for pkg in bad_pkgs:
                 pkg_path = s_path / pkg
                 if pkg_path.exists():
                     shutil.rmtree(pkg_path, ignore_errors=True)
-                # También limpiar .dist-info y archivos .so sueltos en user-site
                 for dist in s_path.glob(f"{pkg}*"):
                     if dist.is_dir(): shutil.rmtree(dist, ignore_errors=True)
                     else: dist.unlink(missing_ok=True)
     
-    # Limpiar carpetas temporales de python
     for tmp in ["/root/.cache/pip", "/root/.cache/matplotlib"]:
         if os.path.exists(tmp): shutil.rmtree(tmp, ignore_errors=True)
 
     with open(MARKER_FILE, "w") as f: f.write("done")
-    log("Limpieza completada. Reiniciando kernel para asegurar entorno limpio...", "success")
+    render_status(100, "Entorno limpio. REINICIANDO KERNEL...", "success")
+    time.sleep(2)
     os._exit(0)
 
 def setup_drive():
@@ -76,8 +132,8 @@ def setup_drive():
 
     try:
         from google.colab import drive
-        log("Solicitando acceso a Google Drive... (Si la ventana no aparece, usa el icono de carpeta a la izquierda)", "info")
-        # Intentamos montaje estándar sin force_remount primero, que es más estable
+        render_status(20, "Solicitando acceso a Google Drive...", "warning")
+        log("Revisa la ventana emergente de Google Drive (o usa el icono de carpeta a la izquierda).", "info")
         drive.mount('/content/drive')
         
         if os.path.exists("/content/drive/MyDrive"):
@@ -88,55 +144,52 @@ def setup_drive():
     except Exception as e:
         error_msg = str(e)
         if "credential propagation" in error_msg:
-            log("⚠️ Error de credenciales en Colab. Intenta montarlo manualmente desde el icono de carpeta (izq).", "warn")
+            log("⚠️ Error de credenciales. Intenta montarlo manualmente desde el icono de carpeta.", "warn")
         else:
             log(f"No se pudo montar Google Drive ({error_msg}).", "warn")
         
-    log("Se usará almacenamiento temporal (no persistente) para esta sesión.", "info")
+    log("Se usará almacenamiento temporal para esta sesión.", "info")
     return None
 
 def install_dependencies():
-    log("Instalando dependencias (esto puede tardar unos minutos)...", "info")
+    render_status(30, "Instalando dependencias base...", "running")
     
     # 1. Actualizar pip y herramientas base
-    subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], check=True)
+    run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"])
     
-    # 2. Instalar Torch con CUDA específico (Crucial para Colab)
-    log("Instalando PyTorch optimizado para CUDA...", "info")
-    subprocess.run([
+    # 2. Instalar Torch con CUDA específico
+    render_status(40, "Instalando PyTorch (CUDA optimized)...", "running")
+    run_cmd([
         sys.executable, "-m", "pip", "install", 
         "torch==2.4.0+cu121", "torchvision==0.19.0+cu121", 
         "--extra-index-url", "https://download.pytorch.org/whl/cu121"
-    ], check=True)
+    ])
 
-    # 3. Instalar requirements.txt omitiendo torch para evitar conflictos
-    log("Procesando requirements.txt...", "info")
+    # 3. Instalar requirements.txt
+    render_status(60, "Procesando requirements.txt...", "running")
     try:
-        # Usamos --no-deps para los paquetes de requirements y luego resolvemos
-        # o simplemente ignoramos los que ya instalamos
-        subprocess.run([
+        run_cmd([
             sys.executable, "-m", "pip", "install", 
             "-r", "requirements.txt", 
             "--ignore-installed", "torch", "torchvision"
-        ], cwd=REPO_DIR, check=True)
-    except Exception as e:
-        log(f"Aviso: Fallo parcial en requirements.txt, intentando instalación forzada de críticos...", "warn")
-        # Si falla el archivo completo, instalamos los más importantes manualmente
+        ], cwd=REPO_DIR)
+    except:
+        log("Fallo parcial en requirements.txt, intentando instalación forzada...", "warn")
         criticos = [
             "natten==0.17.1+torch240cu121 --find-links https://shi-labs.com/natten/wheels/",
             "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3", "einops", "transformers", 
             "accelerate", "safetensors", "scipy", "pandas", "trimesh", "libigl", "mediapipe"
         ]
         for pkg in criticos:
-            subprocess.run(f"{sys.executable} -m pip install {pkg}".split(), check=False)
+            run_cmd(f"{sys.executable} -m pip install {pkg}")
 
-    # 4. Asegurar versiones de UI y parches
-    log("Finalizando configuración de entorno...", "info")
-    subprocess.run([sys.executable, "-m", "pip", "install", "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3"], check=True)
+    # 4. Asegurar versiones finales
+    render_status(80, "Finalizando configuración...", "running")
+    run_cmd([sys.executable, "-m", "pip", "install", "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3"])
 
 def apply_device_fixes():
     """Aplica parches de código para compatibilidad de dispositivos"""
-    log("Aplicando parches de dispositivo...", "info")
+    render_status(85, "Aplicando parches de dispositivo...", "running")
     codec_path = os.path.join(REPO_DIR, "models/strand_codec.py")
     util_path = os.path.join(REPO_DIR, "utils/strand_util.py")
     
@@ -151,32 +204,27 @@ def apply_device_fixes():
         with open(util_path, 'w') as f: f.write(content)
 
 def run_studio():
-    """Lanza la aplicación en un proceso aislado para evitar conflictos de Matplotlib/Gradio"""
-    log("Iniciando DiffLocks Studio...", "success")
+    """Lanza la aplicación en un proceso aislado"""
+    render_status(90, "Iniciando DiffLocks Studio...", "success")
     
-    # Script lanzador temporal para el proceso aislado
     runner_script = os.path.join(REPO_DIR, "colab_runner.py")
     with open(runner_script, "w") as f:
         f.write("""
 import os
 import matplotlib
-matplotlib.use('Agg', force=True) # Fix para Matplotlib en procesos sin display
+matplotlib.use('Agg', force=True)
 import sys
 sys.path.append(os.getcwd())
 from app import main
 if __name__ == "__main__":
-    # Forzar modo share de gradio
     import gradio as gr
+    from gradio.blocks import Blocks
+    original_launch = Blocks.launch
     def launch_with_share(*args, **kwargs):
         kwargs['share'] = True
         kwargs['server_name'] = '0.0.0.0'
         return original_launch(*args, **kwargs)
-    
-    # Monkeypatch para asegurar share=True en Colab
-    from gradio.blocks import Blocks
-    original_launch = Blocks.launch
     Blocks.launch = launch_with_share
-    
     main()
 """)
 
@@ -194,7 +242,20 @@ if __name__ == "__main__":
         print(line, end="")
         if "public URL:" in line:
             url = line.split("public URL:")[1].strip()
-            log(f"\n🚀 ACCESO CONCEDIDO: {url}", "success")
+            render_status(100, "🚀 STUDIO LISTO", "success")
+            display(HTML(f'''
+                <div style="background: #18181b; border: 2px solid #34d399; border-radius: 12px; padding: 20px; margin-top: 20px; font-family: sans-serif;">
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+                        <span style="font-size: 32px;">✅</span>
+                        <span style="font-size: 24px; font-weight: 700; color: #34d399;">¡DiffLocks Studio en línea!</span>
+                    </div>
+                    <div style="background: #27272a; padding: 15px; border-radius: 8px; border: 1px solid #3f3f46;">
+                        <p style="color: #a1a1aa; margin: 0 0 10px 0; font-size: 14px;">Accede a través de esta URL:</p>
+                        <a href="{url}" target="_blank" style="color: #818cf8; font-size: 18px; font-weight: 600; text-decoration: none; word-break: break-all;">{url}</a>
+                    </div>
+                    <p style="color: #71717a; font-size: 12px; margin-top: 15px;">⚠️ Mantén esta pestaña abierta mientras usas la aplicación.</p>
+                </div>
+            '''))
         if "Error" in line or "Exception" in line:
             log(f"Error detectado: {line}", "err")
 
@@ -206,10 +267,10 @@ try:
     # 2. Setup Drive y Repo
     cp_drive = setup_drive()
     if not os.path.exists(REPO_DIR):
-        log(f"Clonando repositorio: {REPO_URL}", "info")
-        subprocess.run(["git", "clone", REPO_URL, REPO_DIR])
+        render_status(25, "Clonando repositorio...", "running")
+        run_cmd(["git", "clone", REPO_URL, REPO_DIR])
     
-    # 3. Persistencia de Checkpoints (Symlink si Drive está disponible)
+    # 3. Persistencia de Checkpoints
     local_cp = os.path.join(REPO_DIR, CHECKPOINTS_SUBDIR)
     if cp_drive:
         if os.path.exists(local_cp) and not os.path.islink(local_cp):
@@ -217,9 +278,9 @@ try:
         if not os.path.exists(local_cp):
             os.makedirs(os.path.dirname(local_cp), exist_ok=True)
             os.symlink(cp_drive, local_cp)
-            log(f"Persistencia activada: {local_cp} -> {cp_drive}", "success")
+            log("Persistencia activada correctamente.", "success")
     else:
-        log("Usando almacenamiento local para checkpoints (no persistente).", "info")
+        log("Almacenamiento temporal activado.", "info")
         os.makedirs(local_cp, exist_ok=True)
 
     # 4. Instalación y Parches
@@ -230,4 +291,5 @@ try:
     run_studio()
 
 except Exception as e:
-    log(f"Error crítico en el lanzador: {str(e)}", "err")
+    render_status(100, f"Error crítico: {str(e)}", "error")
+    log(str(e), "err")

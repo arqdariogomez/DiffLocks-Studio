@@ -10,38 +10,35 @@ from . import flags, flops
 
 def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
     # Fallback implementation of Neighborhood Attention using Unfold
+    # Optimized to avoid slow batch matmuls over pixel dimension
     # q, k, v: [N, H, W, Heads, Dim]
     N, H, W, Heads, Dim = q.shape
     pad = (kernel_size // 2) * dilation
     
-    q_p = q.permute(0, 3, 4, 1, 2) # [N, Heads, Dim, H, W]
-    k_p = k.permute(0, 3, 4, 1, 2)
-    v_p = v.permute(0, 3, 4, 1, 2)
+    # [N*Heads, Dim, H, W]
+    q_r = q.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
+    k_r = k.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
+    v_r = v.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
     
-    q_r = q_p.reshape(N*Heads, Dim, H, W)
-    k_r = k_p.reshape(N*Heads, Dim, H, W)
-    v_r = v_p.reshape(N*Heads, Dim, H, W)
+    # Unfold creates [B, Dim*K*K, H*W]
+    # We reshape to [B, Dim, K*K, H*W]
+    k_unf = F.unfold(k_r, kernel_size, dilation=dilation, padding=pad, stride=1).view(-1, Dim, kernel_size**2, H*W)
+    v_unf = F.unfold(v_r, kernel_size, dilation=dilation, padding=pad, stride=1).view(-1, Dim, kernel_size**2, H*W)
     
-    k_unf = F.unfold(k_r, kernel_size, dilation=dilation, padding=pad, stride=1) 
-    v_unf = F.unfold(v_r, kernel_size, dilation=dilation, padding=pad, stride=1)
+    # q_r is [B, Dim, H, W] -> [B, Dim, 1, H*W]
+    q_flat = q_r.reshape(-1, Dim, 1, H*W)
     
-    q_flat = q_r.reshape(N*Heads, Dim, H*W)
+    # Compute attention: [B, K*K, H*W]
+    # sum over Dim: (B, Dim, 1, L) * (B, Dim, K2, L) -> (B, Dim, K2, L) -> sum -> (B, K2, L)
+    attn = (q_flat * k_unf).sum(dim=1) * scale
+    attn = attn.softmax(dim=1) # Softmax over the K2 dimension
     
-    k_windows = k_unf.reshape(N*Heads, Dim, kernel_size*kernel_size, H*W)
-    v_windows = v_unf.reshape(N*Heads, Dim, kernel_size*kernel_size, H*W)
+    # Compute output: [B, Dim, H*W]
+    # (B, 1, K2, L) * (B, Dim, K2, L) -> (B, Dim, K2, L) -> sum -> (B, Dim, L)
+    out = (attn.unsqueeze(1) * v_unf).sum(dim=2)
     
-    q_i = q_flat.permute(0, 2, 1).unsqueeze(2) # [B, L, 1, D]
-    k_i = k_windows.permute(0, 3, 1, 2)        # [B, L, D, K2]
-    v_i = v_windows.permute(0, 3, 2, 1)        # [B, L, K2, D]
-    
-    attn = torch.matmul(q_i, k_i) * scale
-    attn = attn.softmax(dim=-1)
-    
-    out = torch.matmul(attn, v_i)
-    
-    out = out.squeeze(2).permute(0, 2, 1) # [B, D, L]
-    out = out.reshape(N*Heads, Dim, H, W)
-    out = out.reshape(N, Heads, Dim, H, W).permute(0, 3, 4, 1, 2) # [N, H, W, Heads, Dim]
+    # Reshape back to [N, H, W, Heads, Dim]
+    out = out.view(N, Heads, Dim, H, W).permute(0, 3, 4, 1, 2)
     
     return out
 
