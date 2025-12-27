@@ -165,27 +165,25 @@ def install_dependencies():
         "--extra-index-url", "https://download.pytorch.org/whl/cu121"
     ])
 
-    # 3. Instalar requirements.txt
-    render_status(60, "Procesando requirements.txt...", "running")
-    try:
-        run_cmd([
-            sys.executable, "-m", "pip", "install", 
-            "-r", "requirements.txt", 
-            "--ignore-installed", "torch", "torchvision"
-        ], cwd=REPO_DIR)
-    except:
-        log("Fallo parcial en requirements.txt, intentando instalación forzada...", "warn")
-        criticos = [
-            "natten==0.17.1+torch240cu121 --find-links https://shi-labs.com/natten/wheels/",
-            "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3", "einops", "transformers", 
-            "accelerate", "safetensors", "scipy", "pandas", "trimesh", "libigl", "mediapipe"
-        ]
-        for pkg in criticos:
-            run_cmd(f"{sys.executable} -m pip install {pkg}")
+    # 3. Instalar requirements.txt (Optimizado para Colab)
+    render_status(60, "Instalando dependencias del estudio...", "running")
+    # Instalamos natten primero porque es el más lento y propenso a fallar
+    run_cmd([
+        sys.executable, "-m", "pip", "install", 
+        "natten==0.17.1+torch240cu121", 
+        "--find-links", "https://shi-labs.com/natten/wheels/"
+    ])
+    
+    # Instalamos el resto de requirements
+    run_cmd([
+        sys.executable, "-m", "pip", "install", 
+        "-r", "requirements.txt"
+    ], cwd=REPO_DIR)
 
-    # 4. Asegurar versiones finales
-    render_status(80, "Finalizando configuración...", "running")
-    run_cmd([sys.executable, "-m", "pip", "install", "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3"])
+    # 4. Asegurar versiones críticas para la UI y procesamiento
+    render_status(80, "Finalizando configuración de Gradio 4...", "running")
+    run_cmd([sys.executable, "-m", "pip", "install", "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3", "huggingface_hub"])
+
 
 def apply_device_fixes():
     """Aplica parches de código para compatibilidad de dispositivos"""
