@@ -512,27 +512,17 @@ def download_checkpoints_hf():
     try:
         import download_checkpoints
         
-        # 1. Download Public Assets (Face Landmarker, etc.) - Always to repo_dir/inference
+        # Run the unified setup logic (Assets + Checkpoints with priority)
         token = os.environ.get("HF_TOKEN")
-        download_checkpoints.download_public_assets(cfg.repo_dir, token=token)
+        success = download_checkpoints.run_checkpoint_setup(token=token)
         
-        # 2. Attempt Meshcapade download if credentials present
-        user = os.environ.get("MESH_USER")
-        password = os.environ.get("MESH_PASS")
-        
-        if user and password:
-            print("🌐 Attempting Meshcapade automated download...")
-            # Use cfg.checkpoints_dir which is persistent if possible
-            download_checkpoints.download_from_meshcapade(user, password, cfg.checkpoints_dir)
-        else:
-            print("⚠️ MESH_USER/MESH_PASS not found. Skipping automated checkpoint download.")
-            print("💡 Meshcapade prohibits redistribution. Please add credentials to Secrets.")
-
-        # Re-check after attempts
-        if find_checkpoints_everywhere():
+        if success:
+            print("✅ Setup successful (Assets and Checkpoints ready).")
             return True
-            
-        return False
+        else:
+            print("⚠️ Setup incomplete. Checkpoints might be missing.")
+            return False
+
     except Exception as e:
         print(f"❌ [HF SPACES] Error during setup: {e}")
         import traceback

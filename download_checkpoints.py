@@ -350,52 +350,23 @@ def attempt_direct_download(url, checkpoints_dir, token=None):
         print(f"⚠️ Error during direct download: {e}", flush=True)
     return False
 
-def main():
-    parser = argparse.ArgumentParser(description="DiffLocks Asset Downloader")
-    parser.add_argument("--meshcapade", action="store_true", help="Use Meshcapade official login")
-    parser.add_argument("--hf", action="store_true", help="Use Hugging Face (only for public assets)")
-    args = parser.parse_args()
-
+def run_checkpoint_setup(token=None):
+    """
+    High-level function to orchestrate the entire setup:
+    1. Public assets
+    2. Check for existing checkpoints
+    3. Direct download (CHECKPOINTS_URL)
+    4. HF Repo / Mirror
+    5. Meshcapade (Last resort)
+    """
     from platform_config import cfg
-    print(f"🚀 DiffLocks Asset Downloader (Platform: {cfg.platform})")
     base_dir = cfg.repo_dir
     checkpoints_dir = cfg.checkpoints_dir
     
-    print(f"📍 Repo Dir: {base_dir}")
-    print(f"📍 Checkpoints Dir: {checkpoints_dir}")
-    
-    # 1. Download Public Assets (Always needed)
-    token = os.environ.get("HF_TOKEN")
-    
-    # In Colab, we can try to get the token from userdata if present, but it's optional
-    if not token:
-        try:
-            from google.colab import userdata
-            token = userdata.get('HF_TOKEN')
-            if token:
-                os.environ["HF_TOKEN"] = token # Export for other tools
-                print("✅ HF_TOKEN detected from Colab Secrets.")
-        except:
-            # Fallback to local file if secrets fail
-            try:
-                if os.path.exists("/content/hf_token.txt"):
-                    with open("/content/hf_token.txt", "r") as f:
-                        token = f.read().strip()
-                        os.environ["HF_TOKEN"] = token
-                        print("✅ HF_TOKEN detected from /content/hf_token.txt")
-            except:
-                pass
-            
-    if token == "null" or token == "": token = None
-    
-    if os.environ.get("MESH_USER"):
-        print(f"✅ Meshcapade user detected: {os.environ.get('MESH_USER')}")
+    # 1. Download Public Assets
     download_public_assets(base_dir, token=token)
 
     # 2. Check for Checkpoints
-    # If they exist, we are done
-    
-    # Simple check for checkpoints
     search_dirs = [
         checkpoints_dir,
         cfg.repo_dir / "checkpoints",
@@ -407,7 +378,6 @@ def main():
     
     found_ckpt = False
     for d in search_dirs:
-        # Check if we have the diffusion weights and the VAE/Codec
         if (list(d.rglob("scalp_*.pth")) or list(d.rglob("*.ckpt"))) and \
            (list(d.rglob("strand_codec.pt")) or list(d.rglob("*.pt"))):
             found_ckpt = True
@@ -417,22 +387,19 @@ def main():
     if found_ckpt:
         return True
 
-    # 2.5 Check for local zip file (difflocks_checkpoints.zip)
-    # This is common in Pinokio or manual setups
+    # 2.5 Check for local zip
     potential_zips = [
         cfg.repo_dir / "difflocks_checkpoints.zip",
         cfg.repo_dir / "checkpoints.zip",
         Path("/kaggle/input/difflocks-checkpoints/difflocks_checkpoints.zip") if Path("/kaggle").exists() else None
     ]
-    
     for zip_p in potential_zips:
         if zip_p and zip_p.exists():
             print(f"📦 Found local zip: {zip_p}")
             if unzip_checkpoints(zip_p, checkpoints_dir):
-                print("✅ Checkpoints extracted from local zip!")
                 return True
 
-    # 3. Try Direct Download URL if provided (Highest Priority for manual overrides)
+    # 3. Try Direct Download URL
     direct_url = os.environ.get("CHECKPOINTS_URL") or os.environ.get("MESH_DOWNLOAD_URL")
     if direct_url:
         print(f"🚀 Attempting direct download from CHECKPOINTS_URL: {direct_url}")
@@ -441,24 +408,19 @@ def main():
 
     # 4. Try HF repo (Private or Mirror)
     hf_ckpt_repo = os.environ.get("HF_CHECKPOINTS_REPO")
-    
-    # Auto-detect private repo if not specified but token is present
     if not hf_ckpt_repo and token:
         try:
             from huggingface_hub import HfApi
             api = HfApi(token=token)
             username = api.whoami()['name']
             potential_repo = f"{username}/difflocks-checkpoints"
-            # Quick check if it exists
             api.repo_info(repo_id=potential_repo, repo_type="dataset")
             hf_ckpt_repo = potential_repo
             print(f"✨ Auto-detected your private backup repo: {hf_ckpt_repo}")
         except:
             pass
 
-    # If still no repo, use the community mirror (Safe fallback)
     if not hf_ckpt_repo:
-        # Check if the community mirror exists before assigning it
         potential_mirror = "arqdariogomez/difflocks-checkpoints-mirror"
         try:
             from huggingface_hub import HfApi
@@ -467,63 +429,52 @@ def main():
             hf_ckpt_repo = potential_mirror
             print(f"💡 Community mirror detected: {hf_ckpt_repo}")
         except:
-            print("ℹ️ Community mirror not found or inaccessible. Skipping mirror fallback.")
+            print("ℹ️ Community mirror not found or inaccessible.")
 
     if hf_ckpt_repo:
-        print(f"🔹 Attempting to download checkpoints from HF repo: {hf_ckpt_repo}")
+        print(f"🔹 Attempting download from HF: {hf_ckpt_repo}")
         try:
             from huggingface_hub import snapshot_download
-            import time
-            
-            start_time = time.time()
-            snapshot_download(
-                repo_id=hf_ckpt_repo,
-                repo_type="dataset",
-                local_dir=str(checkpoints_dir),
-                token=token,
-                max_workers=4 # Faster downloads
-            )
-            elapsed = time.time() - start_time
-            
-            # Re-verify after download
-            if (list(checkpoints_dir.rglob("scalp_*.pth")) or list(checkpoints_dir.rglob("*.ckpt"))) and \
-               (list(checkpoints_dir.rglob("strand_codec.pt")) or list(checkpoints_dir.rglob("*.pt"))):
-                print(f"✅ Checkpoints downloaded from HF repo in {elapsed:.1f}s!")
+            snapshot_download(repo_id=hf_ckpt_repo, repo_type="dataset", local_dir=str(checkpoints_dir), token=token)
+            if (list(checkpoints_dir.rglob("scalp_*.pth")) or list(checkpoints_dir.rglob("*.ckpt"))):
                 return True
         except Exception as e:
-            print(f"⚠️ Error downloading from HF repo {hf_ckpt_repo}: {e}")
+            print(f"⚠️ HF Download failed: {e}")
 
-    # 5. Try Meshcapade login if credentials provided (Last resort due to 403 risk)
+    # 5. Try Meshcapade
     user = os.environ.get("MESH_USER")
     password = os.environ.get("MESH_PASS")
-    
     if user and password:
-        print(f"🔑 Meshcapade credentials detected. Starting download...")
-        if download_from_meshcapade(user, password, checkpoints_dir):
-            print("✅ Download from Meshcapade successful!")
-            backup_to_hf(checkpoints_dir, token)
-            return True
-        else:
-            print("❌ Meshcapade download failed (Likely 403 Forbidden).")
-    
-    # 6. Fallback: Try official MPG link as absolute last resort
-    mpg_url = "https://download.is.tue.mpg.de/download.php?domain=difflocks&sfile=difflocks_checkpoints.zip"
-    print(f"🚀 Attempting direct download from official MPG source...")
-    if attempt_direct_download(mpg_url, checkpoints_dir, token):
-        return True
+        print("🌐 Falling back to Meshcapade automated download...")
+        return download_from_meshcapade(user, password, checkpoints_dir)
 
-    print("\n❌ [REQUIRED] Checkpoints missing!")
-    print("💡 Due to licensing (Non-Commercial), you must provide the model weights.")
-    print("Methods to fix this:")
-    print("1. [Manual] Download 'difflocks_checkpoints.zip' from https://difflocks.is.tue.mpg.de/")
-    print(f"   and place it in: {cfg.repo_dir.absolute()}")
-    print("2. [Secrets] Set MESH_USER and MESH_PASS for automated download from Meshcapade.")
-    print("3. [Direct] Set CHECKPOINTS_URL to a direct download link of the zip file.")
-    
-    if cfg.platform == 'hf':
-        print("\n🤗 On Hugging Face Spaces, the best way is to set CHECKPOINTS_URL in your Space Secrets.")
-    
     return False
+
+def main():
+    parser = argparse.ArgumentParser(description="DiffLocks Asset Downloader")
+    parser.add_argument("--meshcapade", action="store_true", help="Use Meshcapade official login")
+    parser.add_argument("--hf", action="store_true", help="Use Hugging Face (only for public assets)")
+    args = parser.parse_args()
+
+    from platform_config import cfg
+    print(f"🚀 DiffLocks Asset Downloader (Platform: {cfg.platform})")
+    
+    token = os.environ.get("HF_TOKEN")
+    if not token:
+        try:
+            from google.colab import userdata
+            token = userdata.get('HF_TOKEN')
+            if token: os.environ["HF_TOKEN"] = token
+        except:
+            pass
+            
+    if token == "null" or token == "": token = None
+    
+    success = run_checkpoint_setup(token=token)
+    if success:
+        print("🎉 Setup completed successfully!")
+    else:
+        print("❌ Setup failed. Please check your credentials or mirrors.")
 
 if __name__ == "__main__":
     success = main()
