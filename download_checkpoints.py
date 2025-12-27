@@ -93,23 +93,32 @@ def download_from_meshcapade(user, password, checkpoints_dir):
         login_page = session.get("https://meshcapade.com/login", timeout=30)
         
         # 2. Login
-        # Meshcapade uses 'email' or 'username'. We try to be robust.
+        # Meshcapade uses a standard login form. We capture the CSRF if possible.
         login_data = {
             "email": user,
-            "username": user,
             "password": password,
             "remember": "on"
         }
         
         print(f"🔑 Logging in as {user}...")
-        # Most modern sites use a JSON API or a form POST
-        # We try both common patterns
-        try:
-            res = session.post("https://meshcapade.com/api/v1/auth/login", json=login_data, timeout=30)
-            if res.status_code not in [200, 201]:
-                res = session.post("https://meshcapade.com/login", data=login_data, timeout=30)
-        except:
-            res = session.post("https://meshcapade.com/login", data=login_data, timeout=30)
+        
+        # In modern Meshcapade, login is often at /login (POST)
+        # We try to detect if we need a CSRF token
+        import re
+        csrf_match = re.search(r'name="_token" value="([^"]+)"', login_page.text)
+        if csrf_match:
+            login_data["_token"] = csrf_match.group(1)
+            print("🛡️ CSRF token detected and added to login.")
+
+        res = session.post("https://meshcapade.com/login", data=login_data, timeout=30, allow_redirects=True)
+
+        # 3. Check if we are logged in
+        # If successful, we should be at /dashboard or have specific cookies
+        if res.status_code == 403:
+            print("❌ Meshcapade login failed (Status: 403 Forbidden).")
+            print("💡 This often happens due to Bot Protection (Cloudflare/WAF).")
+            print("Trying alternative API-based login...")
+            res = session.post("https://meshcapade.com/api/v1/auth/login", json={"email": user, "password": password}, timeout=30)
 
         # 3. Check if we are logged in (usually by checking a cookie or a redirect)
         cookies = session.cookies.get_dict()
@@ -385,7 +394,10 @@ def main():
             hf_ckpt_repo = potential_repo
             print(f"✨ Auto-detected your private backup repo: {hf_ckpt_repo}")
         except:
-            pass
+            # Fallback to a community mirror if everything fails and no credentials
+            if not os.environ.get("MESH_USER") and not os.environ.get("MESH_PASS"):
+                print("💡 No credentials found. Attempting to use a community mirror for checkpoints...")
+                hf_ckpt_repo = "arqdariogomez/difflocks-checkpoints-mirror"
 
     if hf_ckpt_repo:
         print(f"🔹 Attempting to download checkpoints from private HF repo: {hf_ckpt_repo}")
