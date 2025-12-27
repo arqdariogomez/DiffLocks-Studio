@@ -87,21 +87,39 @@ try:
     if 'abc' in requested_formats:
         out = f"{output_base}.abc"
         # For Blender 4.2+, evaluation_mode='VIEWPORT' is safer in background mode
-        bpy.ops.wm.alembic_export(
-            filepath=out, 
-            selected=True, 
-            export_hair=True
-        )
+        try:
+            bpy.ops.wm.alembic_export(
+                filepath=out, 
+                selected=True, 
+                export_hair=True,
+                evaluation_mode='VIEWPORT'
+            )
+        except TypeError:
+            # Fallback for older Blender versions
+            bpy.ops.wm.alembic_export(
+                filepath=out, 
+                selected=True, 
+                export_hair=True
+            )
         print(f"✅ Exported: {out}")
 
     if 'usd' in requested_formats:
         out = f"{output_base}.usd"
         # For Blender 4.2+, evaluation_mode='VIEWPORT' is safer in background mode
-        bpy.ops.wm.usd_export(
-            filepath=out, 
-            selected_objects_only=True,
-            export_hair=True
-        )
+        try:
+            bpy.ops.wm.usd_export(
+                filepath=out, 
+                selected_objects_only=True,
+                export_hair=True,
+                evaluation_mode='VIEWPORT'
+            )
+        except TypeError:
+            # Fallback for older Blender versions
+            bpy.ops.wm.usd_export(
+                filepath=out, 
+                selected_objects_only=True,
+                export_hair=True
+            )
         print(f"✅ Exported: {out}")
         
     if 'obj' in requested_formats:

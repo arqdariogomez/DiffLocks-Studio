@@ -27,6 +27,7 @@ regex
 clean-fid
 resize-right
 huggingface_hub
+requests
 matplotlib
 plotly
 spaces

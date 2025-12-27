@@ -7,6 +7,11 @@
         "venv": "venv",
         "path": ".",
         "message": "python app.py",
+        "env": {
+          "HF_TOKEN": "{{input.HF_TOKEN}}",
+          "MESH_USER": "{{input.MESH_USER}}",
+          "MESH_PASS": "{{input.MESH_PASS}}"
+        },
         "on": [
           {
             "event": "/Running on.*(http:\\S+)/",

@@ -25,3 +25,4 @@ huggingface_hub
 matplotlib
 plotly
 mediapipe
+requests

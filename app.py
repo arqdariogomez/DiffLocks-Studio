@@ -29,7 +29,6 @@ import gradio as gr
 import numpy as np
 import torch
 from pathlib import Path
-import plotly.graph_objects as go
 
 # --- 0. SILENCING ---
 warnings.filterwarnings("ignore")
@@ -351,7 +350,6 @@ def create_error_html(error_msg):
     '''
 
 # --- 5. MODEL LOADER ---
-from inference.img2hair import DiffLocksInference
 
 def find_checkpoints_everywhere():
     """Ultra-robust search for checkpoints in all possible cloud and local paths."""
@@ -463,7 +461,7 @@ def find_checkpoints_everywhere():
     return False
 
 def download_checkpoints_hf():
-    """Auto-download checkpoints if on HF Spaces and missing."""
+    """Auto-download checkpoints if on cloud/persistent platform and missing."""
     # 1. Quick check for existing checkpoints in all possible locations
     if find_checkpoints_everywhere():
         print(f"✅ Checkpoints already present at: {cfg.checkpoints_dir}")
@@ -471,27 +469,16 @@ def download_checkpoints_hf():
 
     # 2. Determine if we should attempt auto-download
     is_cloud = (
-        cfg.platform in ['huggingface', 'docker', 'kaggle', 'colab'] or 
+        cfg.platform in ['huggingface', 'docker', 'kaggle', 'colab', 'pinokio'] or 
         'SPACE_ID' in os.environ or 
-        Path("/app").exists() or 
-        Path("/home/user/app").exists() or
         os.environ.get("DOCKER_CONTAINER") == "true"
     )
     
-    # HF Spaces specific path normalization
-    if 'SPACE_ID' in os.environ:
-        if Path("/data").exists() and os.access("/data", os.W_OK):
-            if not cfg.checkpoints_dir or str(cfg.checkpoints_dir) == ".":
-                cfg.checkpoints_dir = Path("/data/checkpoints")
-        else:
-            if not cfg.checkpoints_dir or str(cfg.checkpoints_dir) == ".":
-                cfg.checkpoints_dir = cfg.repo_dir / "checkpoints"
-    
-    if not is_cloud: 
+    if not is_cloud and not (os.environ.get("MESH_USER") and os.environ.get("MESH_PASS")): 
         print(f"❌ Missing checkpoints! Search path: {cfg.checkpoints_dir}")
         return False
     
-    print(f"🔍 [CLOUD DETECTED] Missing checkpoints. Platform: {cfg.platform}. Attempting setup...")
+    print(f"🔍 [SETUP] Missing checkpoints. Platform: {cfg.platform}. Attempting setup...")
     
     try:
         import download_checkpoints
@@ -504,14 +491,10 @@ def download_checkpoints_hf():
         user = os.environ.get("MESH_USER")
         password = os.environ.get("MESH_PASS")
         
-        # Determine where to put checkpoints
-        ckpt_base = cfg.repo_dir
-        if Path("/data").exists() and os.access("/data", os.W_OK):
-            ckpt_base = Path("/data")
-            
         if user and password:
-            print("� Attempting Meshcapade automated download...")
-            download_checkpoints.download_from_meshcapade(user, password, ckpt_base)
+            print("🌐 Attempting Meshcapade automated download...")
+            # Use cfg.checkpoints_dir which is persistent if possible
+            download_checkpoints.download_from_meshcapade(user, password, cfg.checkpoints_dir)
         else:
             print("⚠️ MESH_USER/MESH_PASS not found. Skipping automated checkpoint download.")
             print("💡 Meshcapade prohibits redistribution. Please add credentials to Secrets.")
@@ -560,6 +543,8 @@ model = None
 def load_model():
     global model, ckpt_files, vae_files, checkpoints_dir
     if model is not None: return
+    
+    from inference.img2hair import DiffLocksInference
 
     # Re-scan if lists are empty (common after auto-download)
     if not ckpt_files or not vae_files:
@@ -642,6 +627,7 @@ def generate_preview_2d(npz_path, output_dir, log_capture=None):
 
 def generate_preview_3d(npz_path, log_capture=None):
     try:
+        import plotly.graph_objects as go
         if not Path(npz_path).exists():
             if log_capture: log_capture.add_log(f"⚠️ 3D Preview: File not found at {npz_path}")
             return None

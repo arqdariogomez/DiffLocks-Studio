@@ -7,14 +7,6 @@
       }
     },
     {
-      "method": "shell.run",
-      "params": {
-        "message": "pip install -r requirements-pinokio.txt",
-        "venv": "venv",
-        "path": "."
-      }
-    },
-    {
       "method": "script.start",
       "params": {
         "uri": "torch.js",
@@ -25,15 +17,35 @@
       }
     },
     {
+      "method": "shell.run",
+      "params": {
+        "message": "pip install -r requirements-pinokio.txt",
+        "venv": "venv",
+        "path": "."
+      }
+    },
+    {
       "method": "input",
       "params": {
-        "title": "HuggingFace Token",
-        "description": "Enter HF Token (Read) to download assets. Leave empty if public.",
+        "title": "Credentials (Optional)",
+        "description": "Enter credentials for automated asset downloads. Meshcapade is required for the main models.",
         "form": [
           {
             "key": "HF_TOKEN",
+            "title": "HuggingFace Token",
             "type": "password",
             "placeholder": "hf_..."
+          },
+          {
+            "key": "MESH_USER",
+            "title": "Meshcapade Email",
+            "type": "text",
+            "placeholder": "your@email.com"
+          },
+          {
+            "key": "MESH_PASS",
+            "title": "Meshcapade Password",
+            "type": "password"
           }
         ]
       }
@@ -45,7 +57,9 @@
         "path": ".",
         "message": "python download_checkpoints.py",
         "env": {
-          "HF_TOKEN": "{{input.HF_TOKEN}}"
+          "HF_TOKEN": "{{input.HF_TOKEN}}",
+          "MESH_USER": "{{input.MESH_USER}}",
+          "MESH_PASS": "{{input.MESH_PASS}}"
         }
       }
     },

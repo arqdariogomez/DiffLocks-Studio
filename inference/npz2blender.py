@@ -102,22 +102,42 @@ def export_alembic(out_alembic_path, resolution):
 
 
 
-    bpy.ops.wm.alembic_export(
-        filepath=out_alembic_path, 
-        check_existing=False, 
-        start=1, 
-        end=1,
-        selected=True, 
-        uvs=False, 
-        packuv=False, 
-        normals=False, 
-        use_instancing=False, 
-        global_scale=1.0, 
-        export_hair=True, 
-        export_particles=False, 
-        as_background_job=False, 
-        init_scene_frame_range=True
-    )
+    try:
+        bpy.ops.wm.alembic_export(
+            filepath=out_alembic_path, 
+            check_existing=False, 
+            start=1, 
+            end=1,
+            selected=True, 
+            uvs=False, 
+            packuv=False, 
+            normals=False, 
+            use_instancing=False, 
+            global_scale=1.0, 
+            export_hair=True, 
+            export_particles=False, 
+            as_background_job=False, 
+            init_scene_frame_range=True,
+            evaluation_mode='VIEWPORT'
+        )
+    except TypeError:
+        # Fallback for older Blender versions
+        bpy.ops.wm.alembic_export(
+            filepath=out_alembic_path, 
+            check_existing=False, 
+            start=1, 
+            end=1,
+            selected=True, 
+            uvs=False, 
+            packuv=False, 
+            normals=False, 
+            use_instancing=False, 
+            global_scale=1.0, 
+            export_hair=True, 
+            export_particles=False, 
+            as_background_job=False, 
+            init_scene_frame_range=True
+        )
 
 
 
