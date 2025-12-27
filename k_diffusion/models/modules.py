@@ -15,19 +15,23 @@ def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
     N, H, W, Heads, Dim = q.shape
     r = (kernel_size // 2) * dilation
     
-    # [N*Heads, Dim, H, W]
+    # [B, Dim, H, W]
     # We collapse N and Heads to 4D to ensure compatibility with F.pad(mode='replicate')
     q = q.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W) * scale
     k = k.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
     v = v.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
+    B = q.shape[0]
     
     # Use replicate padding to handle boundaries (similar to NATTEN)
     # 4D input [B, C, H, W] with 4-tuple pad works on all Torch versions
     k_p = F.pad(k, (r, r, r, r), mode='replicate')
     v_p = F.pad(v, (r, r, r, r), mode='replicate')
     
-    attn_scores = []
+    # Pre-allocate attention probs for speed
+    attn_probs = torch.empty(B, kernel_size**2, H, W, device=q.device, dtype=q.dtype)
+    
     # Collect attention scores for each relative position in the neighborhood
+    idx = 0
     for i in range(kernel_size):
         for j in range(kernel_size):
             ii = i * dilation
@@ -35,11 +39,10 @@ def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
             # Slice the shifted neighborhood: [B, Dim, H, W]
             ki = k_p[:, :, ii:ii+H, jj:jj+W]
             # Dot product over Dim: [B, H, W]
-            score = (q * ki).sum(dim=1)
-            attn_scores.append(score)
+            attn_probs[:, idx] = (q * ki).sum(dim=1)
+            idx += 1
             
-    # [B, K*K, H, W]
-    attn_probs = torch.stack(attn_scores, dim=1).softmax(dim=1)
+    attn_probs = attn_probs.softmax(dim=1)
     
     out = torch.zeros_like(q)
     # Apply weights to shifted values

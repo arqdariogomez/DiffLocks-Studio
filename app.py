@@ -58,13 +58,17 @@ IS_CPU = (DEVICE == "cpu")
 
 # Optimization flags
 if not IS_CPU:
+    # Modern matmul precision
+    torch.set_float32_matmul_precision('high')
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True # Find best conv algorithm
+    
     # Log GPU details
     gpu_name = torch.cuda.get_device_name(0)
     total_vram = torch.cuda.get_device_properties(0).total_memory / (1024**3)
     print(f"🚀 Using GPU: {gpu_name} ({total_vram:.1f} GB VRAM)")
-    print(f"⚡ TF32 optimizations: ENABLED")
+    print(f"⚡ TF32 & CUDNN Benchmark: ENABLED")
 
 # Detect NATTEN
 try:
