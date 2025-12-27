@@ -1,8 +1,5 @@
 ---
 title: DiffLocks Studio
-emoji: 💇‍♀️
-colorFrom: pink
-colorTo: gray
 sdk: gradio
 sdk_version: "3.50.2"
 app_file: app.py
