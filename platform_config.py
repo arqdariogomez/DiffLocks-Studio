@@ -64,25 +64,21 @@ class Config:
             checkpoints_dir = repo_dir / "checkpoints"
             configs_dir = repo_dir / "configs"
 
-            # HF Spaces persistent storage override - CRITICAL FIX
+            # HF Spaces persistent storage override
             if data_dir:
-                # If /data exists and is writable, we MUST use it for checkpoints
-                # and create the checkpoints folder there if it doesn't exist.
                 data_checkpoints = data_dir / "checkpoints"
-                if not data_checkpoints.exists():
-                    try:
+                # Solo creamos si es posible
+                try:
+                    if not data_checkpoints.exists():
                         data_checkpoints.mkdir(parents=True, exist_ok=True)
-                        print(f"📁 Created checkpoints directory in persistent storage: {data_checkpoints}")
-                    except: pass
-                
-                # Check if it has the required files
-                has_diff = (data_checkpoints / "difflocks_diffusion").exists() and list((data_checkpoints / "difflocks_diffusion").glob("scalp_*.pth"))
-                has_vae = (data_checkpoints / "strand_vae").exists() and list((data_checkpoints / "strand_vae").glob("*.pt"))
-                
-                # If it has them, or even if it's empty but writable, we prioritize it
-                checkpoints_dir = data_checkpoints
-                print(f"📍 HF Persistent Storage detected. Using checkpoints_dir: {checkpoints_dir}")
+                    checkpoints_dir = data_checkpoints
+                    print(f"📍 HF Persistent Storage detected: {checkpoints_dir}")
+                except:
+                    print("⚠️ HF Persistent Storage (/data) is not writable. Using local storage.")
+            else:
+                print("ℹ️ HF Free Tier detected (No persistent storage). Using local session storage.")
             
+            import torch
             return Config(
                 platform=platform,
                 work_dir=work_dir,

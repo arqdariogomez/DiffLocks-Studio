@@ -491,88 +491,40 @@ def download_checkpoints_hf():
         print(f"❌ Missing checkpoints! Search path: {cfg.checkpoints_dir}")
         return False
     
-    print(f"🔍 [CLOUD DETECTED] Missing checkpoints. Platform: {cfg.platform}. Attempting auto-download...")
+    print(f"🔍 [CLOUD DETECTED] Missing checkpoints. Platform: {cfg.platform}. Attempting setup...")
     
-    # Determine where to download (Prefer /data for persistence)
-    download_dir = Path("/tmp/hf_download")
-    if Path("/data").exists() and os.access("/data", os.W_OK):
-        download_dir = Path("/data/tmp_download")
-        print(f"💾 Using /data for persistent download")
-
     try:
-        from huggingface_hub import snapshot_download
+        import download_checkpoints
+        
+        # 1. Download Public Assets (Face Landmarker, etc.) - Always to repo_dir/inference
         token = os.environ.get("HF_TOKEN")
+        download_checkpoints.download_public_assets(cfg.repo_dir, token=token)
         
-        if not token and cfg.platform == 'huggingface':
-            print("⚠️ [HF SPACES] HF_TOKEN not found in environment variables. If the dataset is private, download will fail.")
+        # 2. Attempt Meshcapade download if credentials present
+        user = os.environ.get("MESH_USER")
+        password = os.environ.get("MESH_PASS")
         
-        # Double check before starting download
+        # Determine where to put checkpoints
+        ckpt_base = cfg.repo_dir
+        if Path("/data").exists() and os.access("/data", os.W_OK):
+            ckpt_base = Path("/data")
+            
+        if user and password:
+            print("� Attempting Meshcapade automated download...")
+            download_checkpoints.download_from_meshcapade(user, password, ckpt_base)
+        else:
+            print("⚠️ MESH_USER/MESH_PASS not found. Skipping automated checkpoint download.")
+            print("💡 Meshcapade prohibits redistribution. Please add credentials to Secrets.")
+
+        # Re-check after attempts
         if find_checkpoints_everywhere():
             return True
-
-        print(f"🔹 [HF SPACES] Downloading models from arqdariogomez/difflocks-assets-hybrid...")
-        
-        # DO NOT delete download_dir if it's in /data to allow resuming large downloads
-        if not str(download_dir).startswith("/data"):
-            if download_dir.exists(): shutil.rmtree(download_dir)
-        
-        download_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Download everything to the download_dir
-        snapshot_download(
-            repo_id="arqdariogomez/difflocks-assets-hybrid",
-            repo_type="dataset",
-            local_dir=str(download_dir),
-            local_dir_use_symlinks=False,
-            token=token if token else None,
-            ignore_patterns=["*.md", ".git*"]
-        )
-        
-        # Destination logic: Prefer /data for persistence
-        if Path("/data").exists() and os.access("/data", os.W_OK):
-            final_target = Path("/data/checkpoints")
-        else:
-            final_target = cfg.repo_dir / "checkpoints"
             
-        final_target.mkdir(parents=True, exist_ok=True)
-        print(f"🚚 Moving downloaded files to: {final_target}")
-
-        # Search for downloaded folders (they might be nested)
-        found_any = False
-        # Extended search for folders
-        for folder_name in ["difflocks_diffusion", "strand_vae", "rgb2material", "assets"]:
-            source_folder = None
-            # Search recursively for the folder name
-            for p in download_dir.rglob(folder_name):
-                if p.is_dir():
-                    source_folder = p
-                    break
-            
-            if source_folder:
-                dest = final_target / folder_name
-                if dest.exists():
-                    print(f"♻️ Overwriting existing {folder_name} in {final_target}")
-                    shutil.rmtree(dest)
-                
-                # Move the folder to its exact destination
-                shutil.move(str(source_folder), str(dest))
-                print(f"✅ Moved {folder_name} to {dest}")
-                found_any = True
-
-        if found_any:
-            # Re-initialize global file lists
-            find_checkpoints_everywhere()
-            print(f"🎯 [HF SPACES] Setup complete. Checkpoints at: {cfg.checkpoints_dir}")
-            
-            # Clean up temporary download dir if not persistent
-            if download_dir.exists() and not str(download_dir).startswith("/data"):
-                try: shutil.rmtree(download_dir)
-                except: pass
-            return True
-        
         return False
     except Exception as e:
-        print(f"❌ [HF SPACES] Error downloading checkpoints: {e}")
+        print(f"❌ [HF SPACES] Error during setup: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # Run initial search and download

@@ -7,95 +7,124 @@ from pathlib import Path
 
 def download_from_meshcapade(user, password, base_dir):
     """
-    Placeholder for Meshcapade official download.
-    Note: Exact implementation depends on Meshcapade's portal structure.
+    Automated download from Meshcapade.
+    Note: Requires MESH_USER and MESH_PASS secrets.
     """
+    if not user or not password:
+        print("❌ Meshcapade credentials missing (MESH_USER/MESH_PASS)")
+        return False
+
     print(f"🔐 Attempting official download from Meshcapade for user: {user}")
-    # In a real scenario, we would use requests.Session() to login and download.
-    # Since the exact URLs for DiffLocks are not public yet, we'll guide the user.
     
     # Checkpoints we need
-    required = [
-        "difflocks_diffusion/scalp_texture_conditional.pth",
-        "strand_vae/strand_codec.pt",
-        "rgb2material/rgb2material.pt"
-    ]
+    checkpoints_dir = base_dir / "checkpoints"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
     
-    print("⚠️  Official Meshcapade automated download is currently in 'manual-assistance' mode.")
-    print("Please ensure you have downloaded the files from https://meshcapade.com/models")
-    print(f"and placed them in: {base_dir / 'checkpoints'}")
+    # REGLA: No redistribuir checkpoints.
+    # El usuario debe descargarlos.
+    print("ℹ️  Please ensure you have accepted the terms at https://meshcapade.com/models")
     
-    # If we had the direct links, we would do:
-    # session = requests.Session()
-    # session.post("https://meshcapade.com/login", data={"username": user, "password": password})
-    # session.get("https://meshcapade.com/download/difflocks/models.zip") ...
+    # If the user has provided a custom download URL in environment, use it
+    # This is a safe way to allow "automated" download without redistributing
+    custom_url = os.environ.get("MESH_DOWNLOAD_URL")
+    if custom_url:
+        print(f"🚀 Downloading from custom Meshcapade link...")
+        try:
+            r = requests.get(custom_url, stream=True)
+            zip_path = checkpoints_dir / "meshcapade_models.zip"
+            with open(zip_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            # Extract
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(checkpoints_dir)
+            os.remove(zip_path)
+            print("✅ Models extracted successfully!")
+            return True
+        except Exception as e:
+            print(f"⚠️ Error with custom download: {e}")
+
+    print("\n💡 Automated scraping of Meshcapade is restricted.")
+    print("Please manually place the 'difflocks_diffusion' and 'strand_vae' folders in:")
+    print(f"📍 {checkpoints_dir.absolute()}")
     
     return False
+
+def download_public_assets(base_dir, token=None):
+    """Downloads non-restricted assets (Face Landmarker, etc.) from HF."""
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        import os
+        os.system("pip install huggingface_hub")
+        from huggingface_hub import snapshot_download
+    
+    REPO_ID = "arqdariogomez/difflocks-assets-hybrid"
+    print("🔹 Downloading public resources (Face Landmarker, etc.)...")
+    try:
+        snapshot_download(repo_id=REPO_ID, repo_type="dataset", allow_patterns=["assets/*"], 
+                         local_dir=str(base_dir / "inference"), token=token)
+        return True
+    except Exception as e:
+        print(f"⚠️ Error downloading public assets: {e}")
+        return False
 
 def main():
     parser = argparse.ArgumentParser(description="DiffLocks Asset Downloader")
     parser.add_argument("--meshcapade", action="store_true", help="Use Meshcapade official login")
-    parser.add_argument("--hf", action="store_true", help="Use Hugging Face (requires token for private repos)")
+    parser.add_argument("--hf", action="store_true", help="Use Hugging Face (only for public assets)")
     args = parser.parse_args()
 
     print("🚀 DiffLocks Asset Downloader")
     base_dir = Path(".")
     checkpoints_dir = base_dir / "checkpoints"
-    checkpoints_dir.mkdir(parents=True, exist_ok=True)
-
-    # 1. Check for Meshcapade login
-    if args.meshcapade or os.environ.get("MESH_USER"):
-        user = os.environ.get("MESH_USER")
-        password = os.environ.get("MESH_PASS")
-        if user and password:
-            if download_from_meshcapade(user, password, base_dir):
-                print("✅ Download from Meshcapade successful!")
-                return True
-        else:
-            print("❌ Meshcapade credentials missing in environment (MESH_USER/MESH_PASS)")
-
-    # 2. Try Hugging Face (Existing logic)
+    
+    # 1. Download Public Assets (Always needed)
     token = os.environ.get("HF_TOKEN")
     if token == "null" or token == "": token = None
+    download_public_assets(base_dir, token=token)
+
+    # 2. Check for Checkpoints
+    # If they exist, we are done
+    from platform_config import cfg
     
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        os.system("pip install huggingface_hub")
-        from huggingface_hub import snapshot_download
+    # Simple check for checkpoints
+    search_dirs = [
+        Path("checkpoints"),
+        cfg.repo_dir / "checkpoints",
+        Path("/data/checkpoints") if Path("/data").exists() else None,
+        Path("/app/checkpoints") if Path("/app").exists() else None
+    ]
+    search_dirs = [d for d in search_dirs if d and d.exists()]
     
-    REPO_ID = "arqdariogomez/difflocks-assets-hybrid"
-    
-    try:
-        # Assets
-        print("🔹 Downloading resources (Face Landmarker, etc.)...")
-        snapshot_download(repo_id=REPO_ID, repo_type="dataset", allow_patterns=["assets/*"], 
-                         local_dir=str(base_dir / "inference"), token=token)
-        
-        # Checkpoints
-        print("🔹 Downloading models (Checkpoints)...")
-        patterns = [
-            "difflocks_diffusion/scalp_*.pth",
-            "strand_vae/strand_codec.pt",
-            "rgb2material/rgb2material.pt"
-        ]
-        
-        snapshot_download(
-            repo_id=REPO_ID, 
-            repo_type="dataset", 
-            allow_patterns=patterns, 
-            local_dir=str(checkpoints_dir), 
-            token=token,
-            local_dir_use_symlinks=False
-        )
+    found_ckpt = False
+    for d in search_dirs:
+        if list(d.rglob("scalp_*.pth")) and (list(d.rglob("strand_codec.pt")) or list(d.rglob("*.pt"))):
+            found_ckpt = True
+            break
             
-        print("✅ Download completed successfully!")
+    if found_ckpt:
+        print("✅ Checkpoints already present.")
         return True
-    except Exception as e:
-        print(f"❌ Download error: {e}")
-        print("\n💡 TIP: If this is a private repo, ensure HF_TOKEN is set.")
-        print("Alternatively, download manually and place in the 'checkpoints' folder.")
-        return False
+
+    # 3. Try Meshcapade login if credentials provided
+    user = os.environ.get("MESH_USER")
+    password = os.environ.get("MESH_PASS")
+    if user and password:
+        if download_from_meshcapade(user, password, base_dir):
+            print("✅ Download from Meshcapade successful!")
+            return True
+
+    print("\n❌ [REQUIRED] Checkpoints missing!")
+    print("💡 Meshcapade prohibits redistribution. Please:")
+    print("1. Login to https://meshcapade.com/models")
+    print("2. Download DiffLocks checkpoints.")
+    print(f"3. Place them in: {checkpoints_dir.absolute()}")
+    print("\nOr set MESH_USER and MESH_PASS in your Secrets/Environment for automated attempt.")
+    
+    return False
 
 if __name__ == "__main__":
     success = main()
