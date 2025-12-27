@@ -1,0 +1,1246 @@
+# @title 🚀 DiffLocks Studio - Colab Edition (V52 - Full Kaggle Features)
+# ==================================================================================
+# - UI estilo Kaggle completo (dark theme, checkboxes visibles)
+# - Barra de progreso secundaria durante difusión
+# - Liberación de memoria en cada paso
+# - Verbose logging
+# - Detección correcta de URL (.gradio.live)
+# ==================================================================================
+
+import os
+import sys
+import subprocess
+import shutil
+import time
+from pathlib import Path
+import ipywidgets as widgets
+from IPython.display import display, HTML
+import re
+
+# ==============================================================================
+# 1. CONFIGURATION
+# ==============================================================================
+WORK_DIR = Path("/content")
+REPO_DIR = WORK_DIR / "DiffLocks-Studio"
+BLENDER_DIR = WORK_DIR / "blender"
+BLENDER_EXE = BLENDER_DIR / "blender"
+WHEELS_DIR = WORK_DIR / "wheels_cache"
+MARKER_FILE = WORK_DIR / ".difflocks_v52_ready"
+
+HF_ASSETS_REPO = "arqdariogomez/difflocks-assets-hybrid"
+
+# ==============================================================================
+# 2. UI SETUP (Kaggle Style)
+# ==============================================================================
+output_widget = widgets.Output()
+display(output_widget)
+
+log_lines = []
+
+def render_status(progress, message, status="running", show_logs=True):
+    colors = {"running": "#818cf8", "success": "#34d399", "error": "#f87171", "warning": "#fbbf24"}
+    color = colors.get(status, "#818cf8")
+
+    logs_html = ""
+    if show_logs and log_lines:
+        logs_content = "<br>".join(log_lines[-15:])
+        logs_html = f"""
+        <details style="margin-top: 10px;" open>
+            <summary style="cursor: pointer; color: #a1a1aa; font-size: 12px;">📋 Logs ({len(log_lines)})</summary>
+            <div style="background: #27272a; padding: 10px; border-radius: 5px; margin-top: 5px;
+                max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 11px;
+                color: #d4d4d8; border: 1px solid #3f3f46;">
+                {logs_content}
+            </div>
+        </details>
+        """
+
+    html = f"""
+    <div style="background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
+        border-left: 4px solid {color}; border-radius: 8px; padding: 20px; margin-bottom: 10px;
+        border: 1px solid #3f3f46; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 24px; font-weight: 700; color: #fafafa;">💇‍♀️ DiffLocks Studio</span>
+            <span style="background: {color}33; color: {color}; padding: 4px 12px;
+                border-radius: 20px; font-size: 12px; font-weight: 600;">{progress}%</span>
+        </div>
+        <div style="color: #e4e4e7; font-size: 16px; margin-bottom: 15px;">{message}</div>
+        <div style="background: #3f3f46; height: 6px; border-radius: 3px; overflow: hidden;">
+            <div style="width: {progress}%; height: 100%; background: linear-gradient(90deg, {color}, {color}cc);
+                transition: width 0.3s ease;"></div>
+        </div>
+        {logs_html}
+    </div>
+    """
+
+    with output_widget:
+        output_widget.clear_output(wait=True)
+        display(HTML(html))
+
+def log(msg, level="info"):
+    icons = {"info": "ℹ️", "success": "✅", "error": "❌", "warning": "⚠️"}
+    ts = time.strftime('%H:%M:%S')
+    icon = icons.get(level, "ℹ️")
+    formatted = f"{icon} <span style='color:#71717a'>[{ts}]</span> {msg}"
+    log_lines.append(formatted)
+    print(f"[{ts}] {msg}")
+
+def show_error(message, details=""):
+    html = f"""
+    <div style="background: linear-gradient(135deg, #450a0a, #7f1d1d);
+        border: 2px solid #f87171; border-radius: 12px; padding: 30px; margin: 20px 0;">
+        <h2 style="color: #fca5a5; text-align: center;">❌ Error</h2>
+        <p style="color: #fecaca; text-align: center; font-size: 16px;">{message}</p>
+        {f'<pre style="background: #1f1f1f; color: #f87171; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 11px; margin-top: 15px;">{details}</pre>' if details else ''}
+    </div>
+    """
+    with output_widget:
+        output_widget.clear_output(wait=True)
+        display(HTML(html))
+
+def show_gpu_required():
+    html = """
+    <div style="background: linear-gradient(135deg, #450a0a, #7f1d1d);
+        border: 2px solid #f87171; border-radius: 12px; padding: 30px; margin: 20px 0;">
+        <div style="text-align: center; margin-bottom: 20px;">
+            <span style="font-size: 48px;">⚠️</span>
+        </div>
+        <h2 style="color: #fca5a5; text-align: center; margin-bottom: 15px;">GPU Required</h2>
+        <p style="color: #fecaca; text-align: center; font-size: 16px; margin-bottom: 20px;">
+            DiffLocks requires <b>GPU</b> to run on Google Colab.
+        </p>
+        <div style="background: #27272a; border-radius: 8px; padding: 20px;">
+            <h3 style="color: #818cf8; margin-bottom: 10px;">🔧 How to enable GPU:</h3>
+            <ol style="color: #d4d4d8; margin-left: 20px;">
+                <li style="margin-bottom: 8px;"><b>Runtime</b> → <b>Change runtime type</b></li>
+                <li style="margin-bottom: 8px;">Set <b>Hardware accelerator</b> to <b>T4 GPU</b></li>
+                <li style="margin-bottom: 8px;">Click <b>Save</b></li>
+                <li style="margin-bottom: 8px;"><b>Run this cell again</b></li>
+            </ol>
+        </div>
+    </div>
+    """
+    with output_widget:
+        output_widget.clear_output(wait=True)
+        display(HTML(html))
+
+# ==============================================================================
+# 3. HELPER FUNCTIONS
+# ==============================================================================
+
+def run_cmd(cmd, desc="", timeout=600):
+    if desc:
+        log(desc)
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        return result.returncode == 0, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return False, "", "Timeout"
+    except Exception as e:
+        return False, "", str(e)
+
+def get_hf_token():
+    try:
+        from google.colab import userdata
+        return userdata.get('HF_TOKEN')
+    except:
+        return os.environ.get('HF_TOKEN')
+
+# ==============================================================================
+# 4. INSTALLATION
+# ==============================================================================
+
+def download_hf_wheels():
+    """Download wheels from HF - ONLY .whl files"""
+    try:
+        log("📦 Checking HF wheels cache...", "info")
+
+        from huggingface_hub import hf_hub_download, list_repo_files
+
+        hf_token = get_hf_token()
+
+        try:
+            files = list_repo_files(HF_ASSETS_REPO, repo_type="dataset", token=hf_token)
+            wheel_files = [f for f in files if f.endswith(".whl")]
+
+            if not wheel_files:
+                log("No wheels found in HF repo", "warning")
+                return None
+
+        except Exception as e:
+            log(f"Could not list HF files: {e}", "warning")
+            return None
+
+        WHEELS_DIR.mkdir(exist_ok=True)
+
+        critical_wheels = ["natten", "torch-2.4.0", "torchvision-0.19.0"]
+
+        for wf in wheel_files:
+            wheel_name = Path(wf).name
+            if any(crit in wheel_name.lower() for crit in critical_wheels):
+                local_path = WHEELS_DIR / wheel_name
+                if not local_path.exists():
+                    log(f"  Downloading {wheel_name}...", "info")
+                    try:
+                        hf_hub_download(
+                            repo_id=HF_ASSETS_REPO,
+                            repo_type="dataset",
+                            filename=wf,
+                            local_dir=WHEELS_DIR.parent,
+                            token=hf_token
+                        )
+                        src = WHEELS_DIR.parent / wf
+                        if src.exists():
+                            shutil.move(str(src), str(local_path))
+                    except:
+                        pass
+
+        natten_wheels = list(WHEELS_DIR.glob("natten*.whl"))
+        if natten_wheels:
+            log(f"✅ Found {len(natten_wheels)} wheels in cache", "success")
+            return str(WHEELS_DIR)
+
+        return None
+
+    except Exception as e:
+        log(f"HF wheels download failed: {e}", "warning")
+        return None
+
+def install_environment():
+    """Install everything needed"""
+
+    if MARKER_FILE.exists() and REPO_DIR.exists() and (REPO_DIR / "checkpoints").exists():
+        render_status(90, "🔄 Using cached installation...", "success")
+        log("Previous installation found", "success")
+        return True
+
+    try:
+        render_status(5, "📦 Installing system dependencies...")
+        run_cmd("apt-get update -qq && apt-get install -y -qq xz-utils libxrender1 libsm6 libgl1-mesa-glx libglib2.0-0 > /dev/null 2>&1")
+        log("System packages ready", "success")
+
+        render_status(10, "📥 Cloning repository...")
+        if REPO_DIR.exists():
+            shutil.rmtree(REPO_DIR)
+        success, _, _ = run_cmd(f"git clone --depth 1 https://github.com/arqdariogomez/DiffLocks-Studio.git {REPO_DIR}")
+        if not success:
+            raise Exception("Failed to clone repository")
+        log("Repository cloned", "success")
+
+        render_status(15, "🧹 Cleaning incompatible packages...")
+        run_cmd("pip uninstall -y torch torchvision torchaudio natten xformers 2>/dev/null")
+        log("Cleaned old packages", "success")
+
+        render_status(18, "🔍 Checking HF wheels cache...")
+        wheels_path = download_hf_wheels()
+
+        render_status(25, "🔥 Installing PyTorch 2.4.0...")
+        if wheels_path:
+            pytorch_cmd = f"pip install --no-cache-dir torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --find-links {wheels_path} --index-url https://download.pytorch.org/whl/cu121"
+        else:
+            pytorch_cmd = "pip install --no-cache-dir torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121"
+
+        success, _, stderr = run_cmd(pytorch_cmd, timeout=600)
+        if not success:
+            raise Exception(f"PyTorch installation failed: {stderr[:100]}")
+
+        verify = subprocess.run(
+            [sys.executable, "-c", "import torch; print(f'PyTorch {torch.__version__} CUDA {torch.version.cuda}')"],
+            capture_output=True, text=True, timeout=30
+        )
+        if verify.returncode == 0:
+            log(verify.stdout.strip(), "success")
+        else:
+            raise Exception(f"PyTorch verification failed: {verify.stderr}")
+
+        render_status(40, "🧩 Installing NATTEN...")
+        natten_installed = False
+
+        if wheels_path:
+            natten_wheel = list(Path(wheels_path).glob("natten*.whl"))
+            if natten_wheel:
+                log("Trying HF cached wheel...", "info")
+                success, _, _ = run_cmd(f"pip install --no-cache-dir {natten_wheel[0]}")
+                if success:
+                    verify = subprocess.run(
+                        [sys.executable, "-c", "import natten; print(natten.__version__)"],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    if verify.returncode == 0:
+                        log(f"NATTEN {verify.stdout.strip()} (from HF cache)", "success")
+                        natten_installed = True
+
+        if not natten_installed:
+            log("Trying shi-labs wheels...", "info")
+            natten_cmd = "pip install --no-cache-dir --trusted-host shi-labs.com natten==0.17.1+torch240cu121 -f https://shi-labs.com/natten/wheels/"
+            ssl_env = os.environ.copy()
+            ssl_env['PYTHONHTTPSVERIFY'] = '0'
+
+            result = subprocess.run(natten_cmd, shell=True, capture_output=True, text=True, timeout=300, env=ssl_env)
+
+            if result.returncode == 0:
+                verify = subprocess.run(
+                    [sys.executable, "-c", "import natten; print(natten.__version__)"],
+                    capture_output=True, text=True, timeout=30
+                )
+                if verify.returncode == 0:
+                    log(f"NATTEN {verify.stdout.strip()}", "success")
+                    natten_installed = True
+
+        if not natten_installed:
+            raise Exception("NATTEN installation failed")
+
+        render_status(55, "📚 Installing dependencies...")
+        deps = "numpy==1.26.4 scipy==1.13.1 gradio==3.50.2 huggingface_hub[hf_transfer]"
+        run_cmd(f"pip install --no-cache-dir {deps}", timeout=180)
+
+        more_deps = "dctorch accelerate torchdiffeq torchsde einops safetensors libigl trimesh mediapipe plotly hjson jsonmerge Pillow opencv-contrib-python"
+        run_cmd(f"pip install --no-cache-dir {more_deps}", timeout=300)
+        log("Dependencies installed", "success")
+
+        render_status(70, "🧠 Downloading model checkpoints...")
+        hf_token = get_hf_token()
+        if hf_token:
+            os.environ["HF_TOKEN"] = hf_token
+
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id=HF_ASSETS_REPO, repo_type="dataset",
+            allow_patterns=["checkpoints/*", "assets/*"],
+            local_dir=REPO_DIR, local_dir_use_symlinks=False, token=hf_token
+        )
+        log("Checkpoints downloaded", "success")
+
+        src_assets = REPO_DIR / "assets"
+        dst_assets = REPO_DIR / "inference/assets"
+        if src_assets.exists():
+            dst_assets.mkdir(parents=True, exist_ok=True)
+            for f in src_assets.glob("*"):
+                if not (dst_assets / f.name).exists():
+                    shutil.move(str(f), str(dst_assets / f.name))
+
+        render_status(85, "🎨 Setting up Blender...")
+        if BLENDER_DIR.exists():
+            shutil.rmtree(BLENDER_DIR)
+        BLENDER_DIR.mkdir(exist_ok=True)
+
+        log("Downloading Blender from official source...", "info")
+        run_cmd("wget -q -O /tmp/blender.tar.xz 'https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz'", timeout=300)
+        run_cmd(f"tar -xf /tmp/blender.tar.xz -C {BLENDER_DIR} --strip-components=1", timeout=120)
+        Path("/tmp/blender.tar.xz").unlink(missing_ok=True)
+
+        if BLENDER_EXE.exists():
+            log("Blender ready", "success")
+        else:
+            log("Blender setup failed", "warning")
+
+        task_path = REPO_DIR / "inference/assets/face_landmarker_v2_with_blendshapes.task"
+        task_path.parent.mkdir(parents=True, exist_ok=True)
+        if not task_path.exists():
+            run_cmd(f"wget -q -O {task_path} https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task")
+
+        MARKER_FILE.write_text(f"v52 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        render_status(92, "✅ Installation complete!", "success")
+        return True
+
+    except Exception as e:
+        import traceback
+        show_error(str(e), traceback.format_exc())
+        raise
+
+# ==============================================================================
+# 5. LAUNCHER SCRIPT (Full Kaggle Features)
+# ==============================================================================
+
+def create_launcher_script():
+    script = r'''#!/usr/bin/env python3
+# DiffLocks Launcher - Full Kaggle Features
+import os
+import sys
+import time
+import shutil
+import gc
+import zipfile
+import warnings
+import logging
+import traceback
+import threading
+from pathlib import Path
+from html import escape
+
+warnings.filterwarnings("ignore")
+for name in ["natten", "gradio", "matplotlib", "PIL", "mediapipe", "absl", "tensorflow", "httpx", "uvicorn"]:
+    logging.getLogger(name).setLevel(logging.CRITICAL)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+REPO_DIR = Path("''' + str(REPO_DIR) + r'''")
+OUTPUT_DIR = Path("/content/outputs")
+BLENDER_EXE = Path("''' + str(BLENDER_EXE) + r'''")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+sys.path.insert(0, str(REPO_DIR))
+os.chdir(REPO_DIR)
+
+print("🔄 Loading libraries...", flush=True)
+
+import torch
+import gradio as gr
+import numpy as np
+import plotly.graph_objects as go
+
+print(f"✅ PyTorch {torch.__version__} | CUDA: {torch.cuda.is_available()}", flush=True)
+if torch.cuda.is_available():
+    print(f"🎮 GPU: {torch.cuda.get_device_name(0)}", flush=True)
+    print(f"💾 VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB", flush=True)
+
+print("🧠 Loading DiffLocks model...", flush=True)
+from inference.img2hair import DiffLocksInference
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+ckpt_files = list((REPO_DIR / "checkpoints").rglob("*.pth"))
+vae_files = list((REPO_DIR / "checkpoints").rglob("strand_codec.pt"))
+
+if not ckpt_files or not vae_files:
+    print("❌ Checkpoints not found!", flush=True)
+    sys.exit(1)
+
+model = DiffLocksInference(
+    str(vae_files[0]),
+    str(REPO_DIR / "configs/config_scalp_texture_conditional.json"),
+    str(ckpt_files[0]),
+    DEVICE
+)
+print("✅ Model loaded!", flush=True)
+
+# ============================================================================
+# MEMORY MANAGEMENT
+# ============================================================================
+
+def clear_memory(reason=""):
+    """Aggressively clear memory"""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    if reason:
+        print(f"🧹 Memory cleared: {reason}", flush=True)
+
+# ============================================================================
+# UI FUNCTIONS (Full Kaggle Style)
+# ============================================================================
+
+def render_debug_html(logs_list):
+    if not logs_list:
+        logs_list = ["[Waiting for job to start...]"]
+
+    lines_html = []
+    for line in logs_list[-60:]:
+        escaped = escape(str(line))
+        if "❌" in line or "ERROR" in line or "Error" in line:
+            color = "#f87171"
+        elif "✅" in line or "Complete" in line or "SUCCESS" in line:
+            color = "#34d399"
+        elif "⚠️" in line or "WARNING" in line or "Warning" in line:
+            color = "#fbbf24"
+        elif "🔄" in line or "Diffusion" in line or "diffusion" in line:
+            color = "#818cf8"
+        elif "🟧" in line or "Blender" in line:
+            color = "#fb923c"
+        elif "🧹" in line or "Memory" in line:
+            color = "#22d3ee"
+        elif "📍" in line or "Phase" in line:
+            color = "#a78bfa"
+        else:
+            color = "#d4d4d8"
+        lines_html.append(f'<div style="color: {color}; margin: 2px 0; word-wrap: break-word;">{escaped}</div>')
+
+    return f'''
+    <div style="background-color: #18181b; border: 1px solid #3f3f46; border-radius: 8px;
+        padding: 12px; font-family: 'Consolas', 'Monaco', monospace; font-size: 11px; line-height: 1.4;
+        max-height: 400px; overflow-y: auto; overflow-x: hidden;">
+        {"".join(lines_html)}
+    </div>
+    '''
+
+def translate_status(msg):
+    msg_l = str(msg).lower()
+    for key, text, t_est, progress, is_diffusion in [
+        ("1/5", "📸 Preprocessing image...", "~15s", 0.08, False),
+        ("2/5", "🔍 Extracting features...", "~45s", 0.15, False),
+        ("3/5", "✨ Running diffusion...", "~6 min", 0.25, True),
+        ("4/5", "🧶 Decoding strands...", "~30s", 0.80, False),
+        ("5/5", "🏁 Finalizing...", "~10s", 0.92, False),
+    ]:
+        if key in msg_l:
+            return text, t_est, progress, is_diffusion
+    return str(msg), "", 0.0, False
+
+def create_status_html(msg, t_est="", status_type="info", progress=0.0,
+                       sub_progress=0.0, sub_text="", show_sub=False):
+    colors = {"info": "#818cf8", "success": "#34d399", "error": "#f87171", "warning": "#fbbf24"}
+    color = colors.get(status_type, "#818cf8")
+
+    t_html = f"<span style='color: #a1a1aa; font-size: 14px; margin-left: 10px;'>({t_est})</span>" if t_est else ""
+
+    # Main progress bar
+    main_bar = f'''
+    <div style="background: #3f3f46; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 12px;">
+        <div style="width: {progress*100}%; height: 100%;
+            background: linear-gradient(90deg, {color}, {color}cc);
+            transition: width 0.5s ease-in-out;"></div>
+    </div>
+    '''
+
+    # Sub progress bar for diffusion
+    sub_bar_html = ""
+    if show_sub and sub_progress > 0:
+        sub_bar_html = f'''
+        <div style="margin-top: 12px; padding: 12px; background: #27272a; border-radius: 8px; border: 1px solid #3f3f46;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="color: #a5b4fc; font-size: 13px; font-weight: 500;">🔄 {sub_text}</span>
+                <span style="color: #818cf8; font-size: 13px; font-weight: 600;">{int(sub_progress*100)}%</span>
+            </div>
+            <div style="background: #3f3f46; height: 6px; border-radius: 3px; overflow: hidden;">
+                <div style="width: {sub_progress*100}%; height: 100%;
+                    background: linear-gradient(90deg, #a5b4fc, #818cf8);
+                    transition: width 0.3s ease-in-out;"></div>
+            </div>
+        </div>
+        '''
+
+    return f'''
+    <div style="padding: 20px; background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
+        border-radius: 12px; border: 1px solid {color}66;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center;">
+                <span style="font-size: 18px; font-weight: 600; color: #fafafa;">{msg}</span>
+                {t_html}
+            </div>
+            <span style="background: {color}33; color: {color}; padding: 4px 12px;
+                border-radius: 20px; font-size: 12px; font-weight: 600;">
+                {int(progress*100)}%
+            </span>
+        </div>
+        {main_bar}
+        {sub_bar_html}
+    </div>
+    '''
+
+def preview_2d(npz_path, output_dir):
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        data = np.load(npz_path)['positions']
+        step = max(1, len(data) // 20000)
+        pts = data[::step].reshape(-1, 3)
+        x, y, z = pts[:, 0], -pts[:, 2], pts[:, 1]
+
+        plt.style.use('dark_background')
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        fig.patch.set_facecolor('#18181b')
+
+        for ax, (u, v, d, title) in zip(axes, [(x, z, y, 'FRONT'), (y, z, abs(x), 'SIDE'), (x, y, z, 'TOP')]):
+            ax.set_facecolor('#18181b')
+            idx = np.argsort(d)
+            ax.scatter(u[idx], v[idx], c=(d[idx]-d.min())/(d.max()-d.min()+1e-8), cmap='copper', s=0.5)
+            ax.axis('off')
+            ax.set_title(title, color='#a1a1aa', fontsize=14, fontweight='bold')
+
+        path = output_dir / "preview.png"
+        fig.savefig(path, facecolor='#18181b', bbox_inches='tight', dpi=100)
+        plt.close(fig)
+
+        del data, pts, x, y, z
+        clear_memory("2D preview")
+
+        return str(path)
+    except Exception as e:
+        print(f"❌ 2D preview error: {e}", flush=True)
+        return None
+
+def preview_3d(npz_path):
+    try:
+        data = np.load(npz_path)['positions']
+        step = max(1, len(data) // 30000)
+        sample = data[::step][:, ::8, :]
+        pts = sample.reshape(-1, 3)
+        x, y, z = pts[:, 0], -pts[:, 2], pts[:, 1]
+
+        num_strands, num_points = sample.shape[:2]
+        grad = np.linspace(0.0, 1.0, num_points)
+        colors = np.tile(grad, num_strands)
+
+        def add_nan(arr):
+            return np.hstack([arr.reshape(sample.shape[:2]), np.full((num_strands, 1), np.nan)]).flatten()
+
+        fig = go.Figure(data=[go.Scatter3d(
+            x=add_nan(x), y=add_nan(y), z=add_nan(z), mode='lines',
+            line=dict(width=1.5, color=np.hstack([colors, np.zeros(num_strands)]),
+                     colorscale=[[0, '#27272a'], [1, '#fafafa']]),
+            hoverinfo='none'
+        )])
+        fig.update_layout(
+            paper_bgcolor='rgba(24,24,27,1)',
+            plot_bgcolor='rgba(24,24,27,1)',
+            scene=dict(
+                xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
+                bgcolor='rgba(24,24,27,1)'
+            ),
+            margin=dict(l=0, r=0, b=0, t=0), height=500
+        )
+
+        del data, sample, pts
+        clear_memory("3D preview")
+
+        return fig
+    except Exception as e:
+        print(f"❌ 3D preview error: {e}", flush=True)
+        return None
+
+def export_obj(npz_path, obj_path, add_log_func):
+    """Export OBJ with chunked writing and memory management"""
+    try:
+        add_log_func("📦 Loading NPZ for OBJ export...")
+        data = np.load(npz_path)
+        positions = data['positions']
+
+        if len(positions.shape) != 3:
+            add_log_func(f"⚠️ Unexpected shape: {positions.shape}")
+            return False
+
+        num_strands, pts_per_strand, _ = positions.shape
+        add_log_func(f"📦 OBJ: {num_strands} strands × {pts_per_strand} points")
+
+        chunk_size = 5000
+
+        with open(obj_path, 'w', buffering=4*1024*1024) as f:
+            f.write("# DiffLocks Hair Export\n")
+            f.write(f"# Strands: {num_strands}, Points per strand: {pts_per_strand}\n\n")
+
+            # Write vertices in chunks
+            for i in range(0, num_strands, chunk_size):
+                end_idx = min(i + chunk_size, num_strands)
+                chunk = positions[i:end_idx]
+                flat = chunk.reshape(-1, 3)
+                lines = "\n".join(f"v {p[0]:.6f} {p[1]:.6f} {p[2]:.6f}" for p in flat)
+                f.write(lines + "\n")
+                del chunk, flat, lines
+
+            f.write("\n# Polylines\n")
+
+            # Write lines in chunks
+            for i in range(0, num_strands, chunk_size):
+                end_idx = min(i + chunk_size, num_strands)
+                lines = []
+                for s in range(i, end_idx):
+                    start = s * pts_per_strand + 1
+                    indices = " ".join(map(str, range(start, start + pts_per_strand)))
+                    lines.append(f"l {indices}")
+                f.write("\n".join(lines) + "\n")
+                del lines
+
+        del positions
+        clear_memory("OBJ export")
+
+        size_mb = Path(obj_path).stat().st_size / (1024**2)
+        add_log_func(f"✅ OBJ exported: {size_mb:.1f} MB")
+
+        return True
+
+    except Exception as e:
+        add_log_func(f"❌ OBJ error: {str(e)}")
+        return False
+
+def export_blender(npz_path, out_base, formats, add_log_func):
+    """Export with Blender - with memory management"""
+    import subprocess as sp
+
+    fmt_map = {'.blend': 'blend', '.abc': 'abc', '.usd': 'usd'}
+    keys = [v for k, v in fmt_map.items() if any(v in f.lower() for f in formats)]
+
+    if not keys:
+        add_log_func("⚠️ No Blender formats selected")
+        return []
+
+    if not BLENDER_EXE.exists():
+        add_log_func(f"❌ Blender not found: {BLENDER_EXE}")
+        return []
+
+    # Clear memory before Blender
+    clear_memory("before Blender")
+
+    script = REPO_DIR / "inference/converter_blender.py"
+    if not script.exists():
+        add_log_func(f"❌ Blender script not found")
+        return []
+
+    cmd = [str(BLENDER_EXE), "-b", "-P", str(script), "--", str(npz_path), str(out_base)] + keys
+
+    add_log_func(f"🟧 Running Blender: {keys}")
+
+    try:
+        result = sp.run(cmd, capture_output=True, text=True, timeout=300)
+
+        if result.stdout:
+            for line in result.stdout.strip().split('\n')[-10:]:
+                if line.strip():
+                    add_log_func(f"[Blender] {line.strip()[:80]}")
+
+        exported = []
+        for ext in ['.blend', '.abc', '.usd']:
+            path = Path(f"{out_base}{ext}")
+            if path.exists():
+                size_mb = path.stat().st_size / (1024**2)
+                exported.append(str(path))
+                add_log_func(f"  ✅ {path.name}: {size_mb:.1f} MB")
+
+        if not exported:
+            add_log_func("⚠️ No Blender files created")
+        else:
+            add_log_func(f"✅ Blender: {len(exported)} files exported")
+
+        return exported
+
+    except sp.TimeoutExpired:
+        add_log_func("❌ Blender timeout (5 min)")
+        return []
+    except Exception as e:
+        add_log_func(f"❌ Blender error: {str(e)}")
+        return []
+
+# ============================================================================
+# MAIN PREDICTION FUNCTION
+# ============================================================================
+
+def predict(image, cfg_scale, export_formats):
+    logs = []
+    diffusion_active = False
+
+    def add_log(msg):
+        ts = time.strftime('%H:%M:%S')
+        logs.append(f"[{ts}] {msg}")
+        print(f"[{ts}] {msg}", flush=True)
+
+    job_dir = OUTPUT_DIR / f"job_{int(time.time())}"
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    add_log("=" * 50)
+    add_log("🚀 JOB STARTED")
+    add_log("=" * 50)
+    add_log(f"Device: {DEVICE}")
+    add_log(f"Export formats: {export_formats}")
+    add_log(f"CFG Scale: {cfg_scale}")
+    add_log(f"Job directory: {job_dir}")
+
+    try:
+        if image is None:
+            raise ValueError("Upload an image first!")
+
+        add_log("🧹 Clearing memory...")
+        clear_memory("job start")
+
+        if torch.cuda.is_available():
+            free_mem = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()
+            add_log(f"💾 Available VRAM: {free_mem / 1024**3:.2f} GB")
+
+        img_path = job_dir / "input.png"
+        shutil.copy(image, img_path) if isinstance(image, str) else image.save(img_path)
+        add_log("📸 Image saved")
+
+        yield {
+            status: create_status_html("🚀 Starting...", progress=0.05),
+            results: gr.Group(visible=False),
+            btn: gr.Button(interactive=False),
+            debug: render_debug_html(logs)
+        }
+
+        model.cfg_val = float(cfg_scale)
+        add_log(f"⚙️ CFG Scale set to {cfg_scale}")
+
+        diffusion_start_time = None
+
+        for update in model.file2hair(str(img_path), str(job_dir)):
+            if isinstance(update, tuple) and update[0] == "status":
+                status_msg = update[1]
+                text, t_est, prog, is_diffusion = translate_status(status_msg)
+                add_log(f"📍 Phase: {status_msg}")
+
+                if is_diffusion:
+                    diffusion_active = True
+                    diffusion_start_time = time.time()
+                    add_log("⏳ Diffusion phase started - this takes ~6 minutes...")
+
+                    # Simulated progress updates during diffusion
+                    total_time = 360  # 6 minutes
+                    update_interval = 10  # Update every 10 seconds
+
+                    for elapsed in range(0, total_time, update_interval):
+                        if not diffusion_active:
+                            break
+
+                        sub_pct = min(elapsed / total_time, 0.95)
+                        remaining_sec = total_time - elapsed
+                        remaining_min = remaining_sec // 60
+                        remaining_sec_mod = remaining_sec % 60
+
+                        global_pct = 0.25 + (sub_pct * 0.55)
+
+                        add_log(f"🔄 Diffusion: {int(sub_pct*100)}% (~{remaining_min}m {remaining_sec_mod}s left)")
+
+                        yield {
+                            status: create_status_html(
+                                text, f"~{remaining_min}m left",
+                                progress=global_pct,
+                                sub_progress=sub_pct,
+                                sub_text=f"Step {int(sub_pct*100)}/100 • {remaining_min}m {remaining_sec_mod}s remaining",
+                                show_sub=True
+                            ),
+                            debug: render_debug_html(logs)
+                        }
+
+                        time.sleep(update_interval)
+
+                    diffusion_active = False
+                else:
+                    diffusion_active = False
+                    yield {
+                        status: create_status_html(text, t_est, progress=prog),
+                        debug: render_debug_html(logs)
+                    }
+
+        npz_path = job_dir / "difflocks_output_strands.npz"
+        if not npz_path.exists():
+            add_log("❌ No output NPZ found!")
+            raise Exception("No output generated - check debug console")
+
+        npz_size = npz_path.stat().st_size / (1024**2)
+        add_log(f"✅ Hair generated! NPZ size: {npz_size:.1f} MB")
+        output_files = [str(npz_path)]
+
+        # Clear memory after inference
+        clear_memory("after inference")
+
+        # 2D Preview
+        yield {
+            status: create_status_html("🎨 Creating 2D preview...", "~30s", progress=0.85),
+            debug: render_debug_html(logs)
+        }
+        add_log("🎨 Generating 2D preview...")
+        img_preview = preview_2d(npz_path, job_dir)
+        if img_preview:
+            output_files.append(img_preview)
+            add_log("✅ 2D preview created")
+
+        # 3D Preview
+        yield {
+            status: create_status_html("🎨 Creating 3D preview...", "~10s", progress=0.88),
+            debug: render_debug_html(logs)
+        }
+        add_log("🎨 Generating 3D preview...")
+        plot_3d_fig = preview_3d(npz_path)
+        if plot_3d_fig:
+            add_log("✅ 3D preview created")
+
+        # OBJ Export
+        yield {
+            status: create_status_html("📦 Exporting OBJ...", "~1 min", progress=0.90),
+            debug: render_debug_html(logs)
+        }
+        obj_path = job_dir / "hair.obj"
+        if export_obj(npz_path, obj_path, add_log):
+            output_files.append(str(obj_path))
+
+        # Clear memory before Blender
+        clear_memory("before Blender exports")
+
+        # Blender Exports
+        blender_fmts = [f for f in export_formats if any(x in f.lower() for x in ['blend', 'abc', 'usd'])]
+        if blender_fmts:
+            yield {
+                status: create_status_html("🟧 Blender export...", "~2 min", progress=0.93),
+                debug: render_debug_html(logs)
+            }
+            blender_files = export_blender(npz_path, job_dir / "hair", blender_fmts, add_log)
+            output_files.extend(blender_files)
+
+        # Create ZIP
+        yield {
+            status: create_status_html("📦 Creating ZIP...", "~10s", progress=0.97),
+            debug: render_debug_html(logs)
+        }
+        add_log("📦 Creating ZIP archive...")
+        zip_path = job_dir / "DiffLocks_Results.zip"
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for f in output_files:
+                if Path(f).exists():
+                    zf.write(f, Path(f).name)
+                    add_log(f"  📄 Added: {Path(f).name}")
+
+        zip_size = zip_path.stat().st_size / (1024**2)
+        add_log(f"✅ ZIP created: {zip_size:.1f} MB")
+
+        add_log("=" * 50)
+        add_log("🎉 JOB COMPLETED SUCCESSFULLY!")
+        add_log(f"📊 Total files: {len(output_files)}")
+        add_log("=" * 50)
+
+        yield {
+            plot: plot_3d_fig,
+            preview: img_preview,
+            status: create_status_html("✅ Generation complete!", status_type="success", progress=1.0),
+            results: gr.Group(visible=True),
+            download: str(zip_path),
+            debug: render_debug_html(logs),
+            btn: gr.Button(interactive=True)
+        }
+
+    except Exception as e:
+        add_log("=" * 50)
+        add_log(f"❌ ERROR: {type(e).__name__}")
+        add_log(f"Message: {str(e)}")
+        tb_lines = traceback.format_exc().strip().split('\n')
+        for line in tb_lines[-15:]:
+            add_log(f"  {line}")
+        add_log("=" * 50)
+
+        yield {
+            status: create_status_html(f"❌ {str(e)[:60]}", status_type="error"),
+            debug: render_debug_html(logs),
+            btn: gr.Button(interactive=True)
+        }
+
+# ============================================================================
+# GRADIO UI (Full Kaggle Style)
+# ============================================================================
+
+CSS = """
+/* Base dark theme */
+body, .gradio-container, .gradio-container .main, .gradio-container .wrap, #component-0 {
+    background: #1f1f23 !important;
+    color: #e4e4e7 !important;
+}
+
+/* All text elements */
+.gradio-container span, .gradio-container label, .gradio-container p,
+.gradio-container h1, .gradio-container h2, .gradio-container h3,
+.markdown-text, .markdown-text *, .label-wrap, .label-wrap span,
+.block-label, .block-label span, .gr-input-label, .gr-box label,
+.svelte-1gfkn6j, label.svelte-1b6s6s {
+    color: #e4e4e7 !important;
+    background: transparent !important;
+}
+
+.markdown-text h2 {
+    color: #fafafa !important;
+    border-bottom: 1px solid #3f3f46;
+    padding-bottom: 8px;
+}
+
+.markdown-text em {
+    color: #a1a1aa !important;
+}
+
+/* Panels and boxes */
+.gr-panel, .gr-box, .gr-group, .gr-form, .panel, .block {
+    background: #27272a !important;
+    border: 1px solid #3f3f46 !important;
+    border-radius: 8px !important;
+}
+
+/* Image upload */
+.gr-image, .gr-image > div, .image-frame, [data-testid="image"] {
+    background: #27272a !important;
+    border: 2px dashed #52525b !important;
+    border-radius: 8px !important;
+}
+.gr-image:hover, .gr-image > div:hover {
+    border-color: #818cf8 !important;
+}
+
+/* Inputs */
+input[type="text"], input[type="number"], textarea, select,
+.gr-input, .gr-text-input {
+    background: #18181b !important;
+    color: #fafafa !important;
+    border: 1px solid #3f3f46 !important;
+    border-radius: 6px !important;
+}
+input:focus, textarea:focus, select:focus {
+    border-color: #818cf8 !important;
+    outline: none !important;
+}
+
+/* Slider */
+.gr-slider input[type="range"] {
+    background: #3f3f46 !important;
+}
+.gr-slider .progress {
+    background: linear-gradient(90deg, #818cf8, #a5b4fc) !important;
+}
+
+/* Checkboxes - FIXED */
+.gr-checkbox-group, .checkbox-group {
+    background: transparent !important;
+}
+.gr-checkbox-group label, .checkbox-group label {
+    color: #e4e4e7 !important;
+    background: #27272a !important;
+    border: 1px solid #3f3f46 !important;
+    border-radius: 6px !important;
+    padding: 8px 12px !important;
+    margin: 4px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+}
+.gr-checkbox-group label:hover, .checkbox-group label:hover {
+    border-color: #818cf8 !important;
+    background: #3f3f46 !important;
+}
+/* Selected state */
+.gr-checkbox-group input:checked + span,
+.gr-checkbox-group input[type="checkbox"]:checked + label,
+.checkbox-group input:checked + span {
+    background: #4f46e5 !important;
+    color: #fafafa !important;
+}
+input[type="checkbox"] {
+    accent-color: #818cf8 !important;
+    width: 18px !important;
+    height: 18px !important;
+}
+input[type="checkbox"]:checked {
+    background-color: #818cf8 !important;
+}
+
+/* Buttons */
+button.primary, .gr-button.primary, button.lg.primary {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+    color: #fafafa !important;
+    border: none !important;
+    font-weight: 600 !important;
+    padding: 12px 24px !important;
+}
+button.primary:hover, .gr-button.primary:hover {
+    background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%) !important;
+}
+button.primary:disabled {
+    background: #52525b !important;
+    opacity: 0.6 !important;
+}
+
+/* Accordion */
+.gr-accordion, details {
+    background: #27272a !important;
+    border: 1px solid #3f3f46 !important;
+    border-radius: 8px !important;
+}
+.gr-accordion summary, details summary {
+    color: #e4e4e7 !important;
+    background: #27272a !important;
+    padding: 12px 16px !important;
+}
+
+/* Tabs */
+.gr-tabs, .tabs { background: transparent !important; }
+.gr-tab-button, .tab-nav button {
+    background: #27272a !important;
+    color: #a1a1aa !important;
+    border: 1px solid #3f3f46 !important;
+}
+.gr-tab-button.selected, .tab-nav button.selected {
+    background: #3f3f46 !important;
+    color: #fafafa !important;
+}
+.gr-tabitem, .tabitem {
+    background: #27272a !important;
+    border: 1px solid #3f3f46 !important;
+}
+
+/* File component */
+.gr-file, .file-preview {
+    background: #27272a !important;
+    border-color: #3f3f46 !important;
+}
+.gr-file a, .file-preview a {
+    color: #a5b4fc !important;
+}
+
+/* Plot */
+.js-plotly-plot, .plotly {
+    background: #18181b !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #18181b; }
+::-webkit-scrollbar-thumb { background: #52525b; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #71717a; }
+
+/* Hide footer */
+footer { display: none !important; }
+
+/* Container */
+.gradio-container { max-width: 100% !important; }
+
+/* Remove animations that cause issues */
+.generating, .loading, .pending {
+    animation: none !important;
+    opacity: 1 !important;
+}
+"""
+
+JS = """
+function() {
+    document.body.style.backgroundColor = '#1f1f23';
+    document.body.classList.add('dark');
+
+    // Fix checkbox visibility
+    setInterval(() => {
+        document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.style.accentColor = '#818cf8';
+            cb.style.width = '18px';
+            cb.style.height = '18px';
+        });
+    }, 1000);
+}
+"""
+
+with gr.Blocks(
+    theme=gr.themes.Soft(primary_hue="indigo", secondary_hue="zinc", neutral_hue="zinc"),
+    css=CSS, title="DiffLocks Studio", js=JS
+) as app:
+
+    gr.Markdown("## 💇‍♀️ DiffLocks Studio")
+    gr.Markdown("*AI-powered 3D hair generation from a single portrait*")
+
+    with gr.Row():
+        with gr.Column(scale=1):
+            image_input = gr.Image(type="filepath", label="Input Portrait", height=300)
+            cfg_slider = gr.Slider(1, 7, 2.5, step=0.1, label="CFG Scale",
+                                   info="Higher = stiffer, Lower = wavy")
+            format_boxes = gr.CheckboxGroup(
+                ["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"],
+                value=["Blender (.blend)", "Alembic (.abc)", "USD (.usd)"],
+                label="Additional Exports",
+                info="OBJ always included"
+            )
+            btn = gr.Button("🚀 GENERATE HAIR", variant="primary", size="lg")
+
+        with gr.Column(scale=2):
+            status = gr.HTML(value=create_status_html("⏳ Upload an image and click Generate", progress=0.0))
+
+            with gr.Group(visible=False) as results:
+                with gr.Tabs():
+                    with gr.Tab("🎨 3D Preview"):
+                        plot = gr.Plot(show_label=False)
+                    with gr.Tab("📸 2D Renders"):
+                        preview = gr.Image(show_label=False, interactive=False)
+                download = gr.File(label="📥 Download Results")
+
+            with gr.Accordion("🛠️ Debug Console", open=False):
+                debug = gr.HTML(value=render_debug_html([]))
+
+    btn.click(
+        predict,
+        [image_input, cfg_slider, format_boxes],
+        [plot, preview, status, results, download, debug, btn]
+    )
+
+print("🚀 Launching Gradio...", flush=True)
+app.queue().launch(share=True, inline=True, quiet=True, show_error=True, height=900)
+'''
+
+    return script
+
+# ==============================================================================
+# 6. MAIN EXECUTION
+# ==============================================================================
+
+def main():
+    try:
+        log("DiffLocks Studio V52", "info")
+        log("=" * 40, "info")
+
+        # Check GPU
+        gpu_check = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10
+        )
+        if gpu_check.returncode == 0 and gpu_check.stdout.strip():
+            log(f"GPU: {gpu_check.stdout.strip()}", "success")
+        else:
+            show_gpu_required()
+            return
+
+        # Install environment
+        install_environment()
+
+        # Create launcher
+        render_status(94, "📝 Preparing launcher...")
+        launcher_path = WORK_DIR / "difflocks_launcher.py"
+        launcher_path.write_text(create_launcher_script())
+        log("Launcher ready", "success")
+
+        render_status(96, "🚀 Starting DiffLocks Studio...")
+
+        # Launch with Popen and monitor for gradio.live URL
+        process = subprocess.Popen(
+            [sys.executable, "-u", str(launcher_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+
+        gradio_url = None
+
+        # Monitor output
+        for line in iter(process.stdout.readline, ''):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Log important messages
+            if any(x in line for x in ['✅', '❌', '🔄', '🧠', '🎮', '🚀', '💾', 'Error']):
+                log(line, "info")
+
+            # Look for gradio.live URL (ignore localhost/127.0.0.1)
+            if '.gradio.live' in line:
+                url_match = re.search(r'(https://[a-zA-Z0-9-]+\.gradio\.live)', line)
+                if url_match:
+                    gradio_url = url_match.group(1)
+                    log(f"Gradio URL: {gradio_url}", "success")
+                    break
+
+            # Skip local URLs
+            if '127.0.0.1' in line or 'localhost' in line:
+                continue
+
+        if gradio_url:
+            # Clear and show inline Gradio
+            with output_widget:
+                output_widget.clear_output(wait=True)
+                display(HTML(f'''
+                <div style="margin: 10px 0;">
+                    <iframe src="{gradio_url}" width="100%" height="900" frameborder="0"
+                        allow="clipboard-write" allowfullscreen></iframe>
+                </div>
+                '''))
+
+            # Keep process alive
+            process.wait()
+        else:
+            log("Could not detect Gradio URL", "warning")
+            render_status(100, "⚠️ App may be running - check logs", "warning")
+            process.wait()
+
+    except KeyboardInterrupt:
+        log("Interrupted by user", "warning")
+    except Exception as e:
+        import traceback
+        show_error(str(e), traceback.format_exc())
+
+main()
