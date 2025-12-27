@@ -31,6 +31,8 @@ REPO_DIR = "/content/DiffLocks-Studio"
 DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
 CHECKPOINTS_SUBDIR = "checkpoints/difflocks_diffusion"
 MARKER_FILE = "/content/.clean_done"
+HF_WHEELS_REPO = "arqdariogomez/difflocks-assets-hybrid"
+WHEELS_DIR = "/content/wheels"
 
 # --- UI DASHBOARD (Kaggle Style) ---
 from IPython.display import display, HTML, clear_output
@@ -152,39 +154,77 @@ def setup_drive():
     return None
 
 def install_dependencies():
-    render_status(30, "Instalando dependencias base...", "running")
+    render_status(30, "Configurando entorno de dependencias...", "running")
     
-    # 1. Actualizar pip y herramientas base
+    # 0. Obtener Token de HF (Secrets de Colab)
+    hf_token = None
+    try:
+        from google.colab import userdata
+        hf_token = userdata.get('HF_TOKEN')
+        if hf_token: log("HF_TOKEN detectado. Intentando acceder a recursos privados...", "success")
+    except:
+        pass
+    
+    # 1. Intentar descargar Wheels desde HF (Ahorra tiempo de compilación)
+    has_local_wheels = False
+    if hf_token:
+        render_status(35, "Descargando wheels optimizados desde Hugging Face...", "running")
+        try:
+            from huggingface_hub import snapshot_download
+            os.makedirs(WHEELS_DIR, exist_ok=True)
+            snapshot_download(
+                repo_id=HF_WHEELS_REPO,
+                repo_type="dataset",
+                local_dir=WHEELS_DIR,
+                allow_patterns=["wheels/*.whl"],
+                token=hf_token
+            )
+            if any(Path(WHEELS_DIR).glob("wheels/*.whl")):
+                log("Wheels optimizados descargados correctamente.", "success")
+                has_local_wheels = True
+        except Exception as e:
+            log(f"No se pudieron obtener wheels de HF (Repo privado o sin acceso). Se instalará normalmente.", "info")
+
+    # 2. Actualizar pip y herramientas base
     run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org"])
     
-    # 2. Instalar Torch con CUDA específico
+    # 3. Instalar Torch con CUDA específico
     render_status(40, "Instalando PyTorch (CUDA optimized)...", "running")
-    run_cmd([
+    torch_cmd = [
         sys.executable, "-m", "pip", "install", 
         "torch==2.4.0+cu121", "torchvision==0.19.0+cu121", 
         "--extra-index-url", "https://download.pytorch.org/whl/cu121",
         "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org", "--trusted-host", "download.pytorch.org"
-    ])
+    ]
+    if has_local_wheels:
+        torch_cmd.extend(["--find-links", os.path.join(WHEELS_DIR, "wheels")])
+    run_cmd(torch_cmd)
 
-    # 3. Instalar requirements.txt (Optimizado para Colab)
+    # 4. Instalar requirements.txt (Optimizado para Colab)
     render_status(60, "Instalando dependencias del estudio...", "running")
-    # Instalamos natten primero porque es el más lento y propenso a fallar
-    run_cmd([
+    # Instalamos natten primero
+    natten_cmd = [
         sys.executable, "-m", "pip", "install", 
         "natten==0.17.1+torch240cu121", 
         "--find-links", "https://shi-labs.com/natten/wheels/",
         "--trusted-host", "shi-labs.com", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org"
-    ])
+    ]
+    if has_local_wheels:
+        natten_cmd.extend(["--find-links", os.path.join(WHEELS_DIR, "wheels")])
+    run_cmd(natten_cmd)
     
     # Instalamos el resto de requirements
-    run_cmd([
+    req_cmd = [
         sys.executable, "-m", "pip", "install", 
         "-r", "requirements.txt",
         "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org", "--trusted-host", "huggingface.co"
-    ], cwd=REPO_DIR)
+    ]
+    if has_local_wheels:
+        req_cmd.extend(["--find-links", os.path.join(WHEELS_DIR, "wheels")])
+    run_cmd(req_cmd, cwd=REPO_DIR)
 
-    # 4. Asegurar versiones críticas para la UI y procesamiento
-    render_status(80, "Finalizando configuración de Gradio 4...", "running")
+    # 5. Asegurar versiones críticas
+    render_status(80, "Finalizando configuración...", "running")
     run_cmd([sys.executable, "-m", "pip", "install", "gradio==4.44.1", "pydantic==2.9.2", "moviepy==1.0.3", "huggingface_hub"])
 
 

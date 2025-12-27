@@ -258,6 +258,18 @@ def main():
     
     # 1. Download Public Assets (Always needed)
     token = os.environ.get("HF_TOKEN")
+    
+    # In Colab, we can try to get the token from userdata if not in env
+    if not token:
+        try:
+            from google.colab import userdata
+            token = userdata.get('HF_TOKEN')
+            if token:
+                os.environ["HF_TOKEN"] = token
+                print("🔑 Found HF_TOKEN in Colab Secrets.")
+        except:
+            pass
+            
     if token == "null" or token == "": token = None
     download_public_assets(base_dir, token=token)
 
@@ -310,20 +322,30 @@ def main():
             print("✅ Download from Meshcapade successful!")
             return True
     
-    # 4. Fallback: Try a direct download URL if provided
-    # The user can provide a direct link to the zip (e.g. from their own drive or bucket)
-    direct_url = os.environ.get("CHECKPOINTS_URL") or os.environ.get("MESH_DOWNLOAD_URL")
+    # 4. Fallback: Try official MPG link or direct download URL if provided
+    mpg_url = "https://download.is.tue.mpg.de/download.php?domain=difflocks&sfile=difflocks_checkpoints.zip"
+    direct_url = os.environ.get("CHECKPOINTS_URL") or os.environ.get("MESH_DOWNLOAD_URL") or mpg_url
+    
     if direct_url:
         print(f"🚀 Attempting direct download from: {direct_url}")
         try:
             zip_path = checkpoints_dir / "downloaded_checkpoints.zip"
+            # Use stream=True for large files
             r = requests.get(direct_url, stream=True, timeout=300)
+            
+            # Check if it's the MPG link and handle potential redirects/headers
             if r.status_code == 200:
                 with open(zip_path, 'wb') as f:
+                    downloaded = 0
                     for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if downloaded % (1024*1024*50) < 8192: # Log every 50MB
+                                print(f"   ... {downloaded / (1024*1024):.1f} MB downloaded")
+                
                 if unzip_checkpoints(zip_path, checkpoints_dir):
-                    os.remove(zip_path)
+                    if zip_path.exists(): os.remove(zip_path)
                     return True
             else:
                 print(f"❌ Direct download failed (Status: {r.status_code})")
