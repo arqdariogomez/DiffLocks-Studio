@@ -864,7 +864,8 @@ def export_blender(npz_path, job_dir, formats, log_capture):
     cmd = [str(cfg.blender_exe), "-b", "-P", str(script), "--", str(npz_path), str(output_base)] + keys
     log_capture.add_log(f"🟧 Starting Blender export: {keys}")
     try:
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # Use encoding='utf-8' and errors='replace' to avoid UnicodeDecodeError on Windows
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
         stdout, stderr = process.communicate(timeout=300)
         if stdout:
             for line in stdout.strip().split('\n')[-10:]:

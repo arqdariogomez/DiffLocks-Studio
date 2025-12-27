@@ -17,6 +17,7 @@ else:
     sys.exit(1)
 
 print(f"🔄 Blender Processing: {input_npz}")
+print(f"ℹ️ Blender Version: {bpy.app.version_string}")
 bpy.ops.wm.read_factory_settings(use_empty=True)
 
 # --- CONFIG ---
@@ -70,8 +71,10 @@ try:
     obj.select_set(True)
 
     # CONVERT TO GEOMETRY (New Curves system in Blender 3.3+)
+    # Note: New CURVES type is much more efficient for hair
     try:
         bpy.ops.object.convert(target='CURVES', keep_original=False)
+        print("✨ Converted to new CURVES system")
     except:
         print("⚠️ Conversion to CURVES failed, keeping as legacy CURVE")
     
@@ -87,6 +90,37 @@ try:
     dg = bpy.context.evaluated_depsgraph_get()
     dg.update()
     
+    def verify_and_retry_abc(filepath):
+        if not os.path.exists(filepath) or os.path.getsize(filepath) < 5000: # Increased threshold
+            print(f"⚠️ {filepath} is missing or too small ({os.path.getsize(filepath) if os.path.exists(filepath) else 0} bytes).")
+            
+            # TRY 1: Export without export_hair (treat as mesh/curve)
+            print("🔄 Retry 1: Exporting without 'export_hair'...")
+            try:
+                bpy.ops.wm.alembic_export(
+                    filepath=filepath, 
+                    selected=True, 
+                    start=1, end=1,
+                    export_hair=False,
+                    export_particles=False,
+                    as_background_job=False
+                )
+            except: pass
+            
+            # TRY 2: Convert to MESH as absolute last resort
+            if not os.path.exists(filepath) or os.path.getsize(filepath) < 5000:
+                print("🔄 Retry 2: Converting to MESH for export...")
+                try:
+                    bpy.ops.object.convert(target='MESH')
+                    bpy.ops.wm.alembic_export(
+                        filepath=filepath, 
+                        selected=True, 
+                        start=1, end=1,
+                        as_background_job=False
+                    )
+                except Exception as e:
+                    print(f"❌ Mesh conversion export failed: {e}")
+
     # EXPORT
     if 'blend' in requested_formats:
         out = f"{output_base}.blend"
@@ -95,43 +129,30 @@ try:
     
     if 'abc' in requested_formats:
         out = f"{output_base}.abc"
-        # For Blender 4.2+, evaluation_mode='VIEWPORT' is safer in background mode
+        print(f"📦 Exporting Alembic: {out}")
         try:
+            # Default attempt with hair support
             bpy.ops.wm.alembic_export(
                 filepath=out, 
                 selected=True, 
-                start=1,
-                end=1,
+                start=1, end=1,
                 export_hair=True,
                 export_particles=False,
                 as_background_job=False,
                 evaluation_mode='VIEWPORT'
             )
-        except TypeError:
-            # Fallback for older Blender versions
-            bpy.ops.wm.alembic_export(
-                filepath=out, 
-                selected=True, 
-                start=1,
-                end=1,
-                export_hair=True
-            )
-        
-        # Verify file size
-        if os.path.exists(out) and os.path.getsize(out) < 2000:
-            print(f"⚠️ Warning: {out} seems too small ({os.path.getsize(out)} bytes). Retrying without export_hair...")
-            bpy.ops.wm.alembic_export(
-                filepath=out, 
-                selected=True, 
-                start=1,
-                end=1,
-                export_hair=False
-            )
-        print(f"✅ Exported: {out}")
+        except:
+            pass
+            
+        verify_and_retry_abc(out)
+        if os.path.exists(out) and os.path.getsize(out) > 5000:
+            print(f"✅ Exported ABC: {out} ({os.path.getsize(out)} bytes)")
+        else:
+            print(f"❌ Failed to export valid ABC: {out}")
 
     if 'usd' in requested_formats:
         out = f"{output_base}.usd"
-        # For Blender 4.2+, evaluation_mode='VIEWPORT' is safer in background mode
+        print(f"📦 Exporting USD: {out}")
         try:
             bpy.ops.wm.usd_export(
                 filepath=out, 
@@ -139,23 +160,20 @@ try:
                 export_hair=True,
                 evaluation_mode='VIEWPORT'
             )
-        except TypeError:
-            # Fallback for older Blender versions
-            bpy.ops.wm.usd_export(
-                filepath=out, 
-                selected_objects_only=True,
-                export_hair=True
-            )
-        
-        # Verify file size
-        if os.path.exists(out) and os.path.getsize(out) < 2000:
-            print(f"⚠️ Warning: {out} seems too small ({os.path.getsize(out)} bytes). Retrying without export_hair...")
-            bpy.ops.wm.usd_export(
-                filepath=out, 
-                selected_objects_only=True,
-                export_hair=False
-            )
-        print(f"✅ Exported: {out}")
+        except:
+            pass
+            
+        if not os.path.exists(out) or os.path.getsize(out) < 5000:
+            print(f"⚠️ USD too small. Retrying as mesh...")
+            try:
+                bpy.ops.object.convert(target='MESH')
+                bpy.ops.wm.usd_export(filepath=out, selected_objects_only=True)
+            except: pass
+            
+        if os.path.exists(out) and os.path.getsize(out) > 5000:
+            print(f"✅ Exported USD: {out} ({os.path.getsize(out)} bytes)")
+        else:
+            print(f"❌ Failed to export valid USD: {out}")
         
     if 'obj' in requested_formats:
         out = f"{output_base}.obj"
