@@ -69,7 +69,29 @@ class Config:
             platform = 'pinokio'
             work_dir = Path.cwd()
             repo_dir = work_dir
+            
+            # 1. Check local folder (Pinokio style)
             blender_exe = work_dir / "blender" / ("blender.exe" if sys.platform == 'win32' else "blender")
+            
+            # 2. Check system PATH if local not found
+            if not blender_exe.exists():
+                import shutil
+                system_blender = shutil.which("blender")
+                if system_blender:
+                    blender_exe = Path(system_blender)
+                elif sys.platform == 'win32':
+                    # 3. Check common Windows paths for Blender 4.2+
+                    common_paths = [
+                        Path(r"C:\Program Files\Blender Foundation\Blender 4.2\blender.exe"),
+                        Path(r"C:\Program Files\Blender Foundation\Blender 4.1\blender.exe"),
+                        Path(r"C:\Program Files\Blender Foundation\Blender 4.0\blender.exe"),
+                        Path(r"C:\Program Files\Blender Foundation\Blender 3.6\blender.exe"),
+                    ]
+                    for p in common_paths:
+                        if p.exists():
+                            blender_exe = p
+                            break
+            
             needs_share = False
         else:
             platform = 'local'

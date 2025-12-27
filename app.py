@@ -875,7 +875,8 @@ def export_blender(npz_path, job_dir, formats, log_capture):
         log_capture.add_log("⚠️ No Blender formats selected")
         return []
     if not cfg.blender_exe.exists():
-        log_capture.add_log(f"❌ Blender not found at: {cfg.blender_exe}")
+        log_capture.add_log(f"❌ Blender not found! Checked: {cfg.blender_exe}")
+        log_capture.add_log("💡 Please install Blender 4.2+ or place it in the 'blender' folder.")
         return []
     
     # Ensure blender is executable (Linux)

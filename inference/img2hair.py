@@ -296,13 +296,14 @@ class DiffLocksInference():
             
             def p_callback(info):
                 i = info['i']
-                # SYNC PROGRESS: Map the 100 diffusion steps to the 0.08-0.55 range of the global UI
-                # We use the total steps from info if available, else self.nr_iters_denoise
+                # SYNC PROGRESS: Map the 100 diffusion steps to the 0.08-0.55 range of the global UI (from app.py PHASES)
                 total = self.nr_iters_denoise
                 if progress is not None:
                     # i goes from 0 to total-1
+                    # Range: 0.08 (start of phase 3) to 0.55 (end of phase 3)
                     current_progress = i / total
-                    progress(0.2 + 0.6 * current_progress, desc=f"Diffusion {i}/{total}")
+                    mapped_progress = 0.08 + (0.55 - 0.08) * current_progress
+                    progress(mapped_progress, desc=f"Diffusion {i}/{total}")
                 
                 # Yield logs to app.py every 10 steps
                 if i % 10 == 0:
@@ -347,7 +348,7 @@ class DiffLocksInference():
             # 4. DECODING
             yield "status", "🧬 4/5: Decoding in 3D (GPU)..."
             yield "log", "⏳ Loading Strand VAE/Codec..."
-            if progress is not None: progress(0.85, desc="Decoding strands...")
+            if progress is not None: progress(0.55, desc="Decoding strands...")
             
             # Move codec to GPU for speed
             codec_device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -366,6 +367,11 @@ class DiffLocksInference():
             density_f32 = density.to(codec_device).float()
 
             def decoding_callback(i, total):
+                if progress is not None:
+                    # Map decoding chunks (0 to total) to 0.55-0.75 range
+                    current_progress = i / total
+                    mapped_progress = 0.55 + (0.75 - 0.55) * current_progress
+                    progress(mapped_progress, desc=f"Decoding {i}/{total}")
                 if i % 10 == 0:
                     print(f"🧬 Decoding: Chunk {i}/{total}")
             
@@ -386,7 +392,7 @@ class DiffLocksInference():
             
             # 5. SAVE
             yield "status", "💾 5/5: Saving Files..."
-            if progress is not None: progress(0.95, desc="Saving results...")
+            if progress is not None: progress(0.75, desc="Saving results...")
             if out_path and strands is not None:
                 positions = strands.cpu().numpy()
                 npz_full_path = os.path.join(out_path, "difflocks_output_strands.npz")
@@ -419,7 +425,7 @@ class DiffLocksInference():
                 cv2.imwrite(os.path.join(out_path, "input_cropped.png"), cv2.cvtColor(cropped_face, cv2.COLOR_RGB2BGR))
                 
             yield "status", "✅ Process completed!"
-            if progress is not None: progress(1.0, desc="Completed")
+            if progress is not None: progress(0.78, desc="Completed")
             yield "result", strands, None
 
         except Exception as e:
