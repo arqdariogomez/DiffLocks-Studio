@@ -253,6 +253,43 @@ def download_public_assets(base_dir, token=None):
             print(f"⚠️ Error downloading public assets: {e}")
         return False
 
+def backup_to_hf(checkpoints_dir, token):
+    """Backs up checkpoints to a private HF dataset for persistence."""
+    if not token:
+        return
+    
+    try:
+        from huggingface_hub import HfApi, create_repo
+        api = HfApi(token=token)
+        user_info = api.whoami()
+        username = user_info['name']
+        repo_id = f"{username}/difflocks-checkpoints"
+        
+        print(f"☁️  Attempting to backup checkpoints to HF: {repo_id}")
+        
+        # 1. Create repo if it doesn't exist
+        try:
+            create_repo(repo_id=repo_id, repo_type="dataset", private=True, exist_ok=True, token=token)
+        except Exception as e:
+            if "already exists" not in str(e).lower():
+                print(f"⚠️ Could not create backup repo: {e}")
+                return
+
+        # 2. Upload the folders
+        # We only upload if they aren't already there to save time
+        print(f"📤 Uploading checkpoints to your private HF repo (this happens once)...")
+        api.upload_folder(
+            folder_path=str(checkpoints_dir),
+            repo_id=repo_id,
+            repo_type="dataset",
+            token=token
+        )
+        print(f"✅ Backup complete! Your checkpoints are now safe at {repo_id}")
+        return repo_id
+    except Exception as e:
+        print(f"⚠️ HF Backup skipped: {e}")
+        return None
+
 def main():
     parser = argparse.ArgumentParser(description="DiffLocks Asset Downloader")
     parser.add_argument("--meshcapade", action="store_true", help="Use Meshcapade official login")
@@ -320,6 +357,21 @@ def main():
 
     # 3. Try private HF repo if specified (Alternative to Google Drive for HF/Colab)
     hf_ckpt_repo = os.environ.get("HF_CHECKPOINTS_REPO")
+    
+    # Auto-detect private repo if not specified but token is present
+    if not hf_ckpt_repo and token:
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi(token=token)
+            username = api.whoami()['name']
+            potential_repo = f"{username}/difflocks-checkpoints"
+            # Quick check if it exists
+            api.repo_info(repo_id=potential_repo, repo_type="dataset")
+            hf_ckpt_repo = potential_repo
+            print(f"✨ Auto-detected your private backup repo: {hf_ckpt_repo}")
+        except:
+            pass
+
     if hf_ckpt_repo:
         print(f"🔹 Attempting to download checkpoints from private HF repo: {hf_ckpt_repo}")
         try:
@@ -345,6 +397,7 @@ def main():
     if user and password:
         if download_from_meshcapade(user, password, checkpoints_dir):
             print("✅ Download from Meshcapade successful!")
+            backup_to_hf(checkpoints_dir, token)
             return True
     
     # 5. Fallback: Try official MPG link or direct download URL if provided
@@ -371,6 +424,7 @@ def main():
                 
                 if unzip_checkpoints(zip_path, checkpoints_dir):
                     if zip_path.exists(): os.remove(zip_path)
+                    backup_to_hf(checkpoints_dir, token)
                     return True
             else:
                 print(f"❌ Direct download failed (Status: {r.status_code})")
