@@ -412,20 +412,34 @@ def main():
         print(f"🚀 Attempting direct download from: {direct_url}")
         try:
             zip_path = checkpoints_dir / "downloaded_checkpoints.zip"
-            # Use stream=True for large files
-            r = requests.get(direct_url, stream=True, timeout=300)
             
-            # Check if it's the MPG link and handle potential redirects/headers
+            # Use a session with headers for better compatibility with MPG server
+            session = requests.Session()
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://difflocks.is.tue.mpg.de/"
+            })
+            
+            # Use stream=True for large files
+            r = session.get(direct_url, stream=True, timeout=600, allow_redirects=True)
+            
             if r.status_code == 200:
+                # Check if we actually got a zip or an HTML error page
+                content_type = r.headers.get('Content-Type', '').lower()
+                if 'html' in content_type:
+                    print("❌ Error: Received HTML instead of a zip file. The download link might be expired or restricted.")
+                    return False
+
                 with open(zip_path, 'wb') as f:
                     downloaded = 0
-                    for chunk in r.iter_content(chunk_size=8192):
+                    for chunk in r.iter_content(chunk_size=1024*1024): # 1MB chunks
                         if chunk:
                             f.write(chunk)
                             downloaded += len(chunk)
-                            if downloaded % (1024*1024*50) < 8192: # Log every 50MB
+                            if downloaded % (1024*1024*50) < 1024*1024: # Log every 50MB
                                 print(f"   ... {downloaded / (1024*1024):.1f} MB downloaded")
                 
+                print(f"✅ Download complete ({downloaded / (1024*1024):.1f} MB).")
                 if unzip_checkpoints(zip_path, checkpoints_dir):
                     if zip_path.exists(): os.remove(zip_path)
                     backup_to_hf(checkpoints_dir, token)
