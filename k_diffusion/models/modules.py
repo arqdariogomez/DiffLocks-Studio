@@ -9,38 +9,51 @@ import os
 from . import flags, flops
 
 def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
-    # Fallback implementation of Neighborhood Attention using Unfold
-    # Optimized to avoid slow batch matmuls over pixel dimension
+    # Fallback implementation of Neighborhood Attention using Shift-and-Sum
+    # This is MUCH faster and more memory-efficient than F.unfold on many systems.
+    # It avoids massive intermediate tensors by using slicing and point-wise operations.
     # q, k, v: [N, H, W, Heads, Dim]
     N, H, W, Heads, Dim = q.shape
-    pad = (kernel_size // 2) * dilation
+    r = (kernel_size // 2) * dilation
     
-    # [N*Heads, Dim, H, W]
-    q_r = q.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
-    k_r = k.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
-    v_r = v.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
+    # [N, Heads, Dim, H, W]
+    q = q.permute(0, 3, 4, 1, 2) * scale
+    k = k.permute(0, 3, 4, 1, 2)
+    v = v.permute(0, 3, 4, 1, 2)
     
-    # Unfold creates [B, Dim*K*K, H*W]
-    # We reshape to [B, Dim, K*K, H*W]
-    k_unf = F.unfold(k_r, kernel_size, dilation=dilation, padding=pad, stride=1).view(-1, Dim, kernel_size**2, H*W)
-    v_unf = F.unfold(v_r, kernel_size, dilation=dilation, padding=pad, stride=1).view(-1, Dim, kernel_size**2, H*W)
+    # Use replicate padding to handle boundaries (similar to NATTEN)
+    k_p = F.pad(k, (r, r, r, r), mode='replicate')
+    v_p = F.pad(v, (r, r, r, r), mode='replicate')
     
-    # q_r is [B, Dim, H, W] -> [B, Dim, 1, H*W]
-    q_flat = q_r.reshape(-1, Dim, 1, H*W)
+    attn_scores = []
+    # Collect attention scores for each relative position in the neighborhood
+    for i in range(kernel_size):
+        for j in range(kernel_size):
+            ii = i * dilation
+            jj = j * dilation
+            # Slice the shifted neighborhood: [N, Heads, Dim, H, W]
+            ki = k_p[:, :, :, ii:ii+H, jj:jj+W]
+            # Dot product over Dim: [N, Heads, H, W]
+            score = (q * ki).sum(dim=2)
+            attn_scores.append(score)
+            
+    # [N, Heads, K*K, H, W]
+    attn_probs = torch.stack(attn_scores, dim=2).softmax(dim=2)
     
-    # Compute attention: [B, K*K, H*W]
-    # sum over Dim: (B, Dim, 1, L) * (B, Dim, K2, L) -> (B, Dim, K2, L) -> sum -> (B, K2, L)
-    attn = (q_flat * k_unf).sum(dim=1) * scale
-    attn = attn.softmax(dim=1) # Softmax over the K2 dimension
-    
-    # Compute output: [B, Dim, H*W]
-    # (B, 1, K2, L) * (B, Dim, K2, L) -> (B, Dim, K2, L) -> sum -> (B, Dim, L)
-    out = (attn.unsqueeze(1) * v_unf).sum(dim=2)
-    
-    # Reshape back to [N, H, W, Heads, Dim]
-    out = out.view(N, Heads, Dim, H, W).permute(0, 3, 4, 1, 2)
-    
-    return out
+    out = torch.zeros_like(q)
+    # Apply weights to shifted values
+    idx = 0
+    for i in range(kernel_size):
+        for j in range(kernel_size):
+            ii = i * dilation
+            jj = j * dilation
+            vi = v_p[:, :, :, ii:ii+H, jj:jj+W]
+            # Weighted sum: [N, Heads, Dim, H, W]
+            out += attn_probs[:, :, idx:idx+1, :, :] * vi
+            idx += 1
+            
+    # Back to [N, H, W, Heads, Dim]
+    return out.permute(0, 3, 4, 1, 2)
 
 
 try:

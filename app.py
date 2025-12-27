@@ -60,6 +60,11 @@ IS_CPU = (DEVICE == "cpu")
 if not IS_CPU:
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    # Log GPU details
+    gpu_name = torch.cuda.get_device_name(0)
+    total_vram = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+    print(f"🚀 Using GPU: {gpu_name} ({total_vram:.1f} GB VRAM)")
+    print(f"⚡ TF32 optimizations: ENABLED")
 
 # Detect NATTEN
 try:
