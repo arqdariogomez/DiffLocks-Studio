@@ -100,46 +100,27 @@ PHASES = [
     ("blender", "🟧 Blender export", 60, 0.94, 1.00),
 ]
 
-def ui_install_blender():
-    capture = VerboseLogCapture()
-    capture.start()
-    capture.add_log("🚀 Iniciando descarga e instalación de Blender 4.2 LTS...")
-    
-    # Run download in a separate thread
-    install_thread = threading.Thread(target=download_blender, args=(cfg.repo_dir / "blender",))
-    install_thread.start()
-    
-    # Poll for progress and logs
-    while install_thread.is_alive():
-        yield {
-            blender_btn: gr.update(interactive=False, value="⏳ Instalando..."),
-            debug_console: render_debug_console(capture.get_logs())
-        }
-        time.sleep(1) # Update every second
-    
-    # Check result
-    from platform_config import Config
-    global cfg
-    cfg = Config.detect()
-    
-    if cfg.blender_exe.exists():
-        capture.add_log("✅ Blender instalado correctamente.")
-        capture.add_log(f"🎯 Nueva ruta detectada: {cfg.blender_exe}")
-        yield {
-            blender_warning: gr.update(visible=False),
-            blender_btn: gr.update(visible=False),
-            debug_console: render_debug_console(capture.get_logs())
-        }
-    else:
-        capture.add_log("❌ Error durante la instalación de Blender.")
-        yield {
-            blender_btn: gr.update(interactive=True, value="📥 Reintentar Instalación"),
-            debug_console: render_debug_console(capture.get_logs())
-        }
-    
-    capture.stop()
-
 # --- 3. LOG CAPTURE & PROGRESS TRACKER ---
+
+def auto_check_blender():
+    """Checks for blender at startup and downloads it if missing in local/pinokio."""
+    if cfg.platform in ['pinokio', 'local'] and not cfg.blender_exe.exists():
+        print("🟧 Blender no detectado. Iniciando descarga automática...")
+        try:
+            from blender_installer import download_blender
+            success = download_blender(cfg.repo_dir / "blender")
+            if success:
+                from platform_config import Config
+                global cfg
+                cfg = Config.detect()
+                print(f"✅ Blender instalado automáticamente en: {cfg.blender_exe}")
+            else:
+                print("❌ La descarga automática de Blender falló.")
+        except Exception as e:
+            print(f"❌ Error en auto_check_blender: {e}")
+
+# Run automatic check before starting UI
+auto_check_blender()
 
 class VerboseLogCapture:
     def __init__(self):
@@ -1356,7 +1337,6 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
             ''')
 
     # --- 8.2. HEADER ---
-    blender_warning, blender_btn = None, None
     with gr.Row():
         with gr.Column(scale=7):
             gr.Markdown(f"""
@@ -1365,25 +1345,21 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                 *Platform: **{cfg.platform.upper()}** | Device: **{DEVICE}** | Precision: **float32***
             """)
             
-            # --- BLENDER MISSING WARNING ---
+            # --- BLENDER MISSING NOTICE ---
             if cfg.platform in ['pinokio', 'local'] and not cfg.blender_exe.exists():
-                with gr.Group() as blender_warning:
-                    gr.HTML(f"""
-                        <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-top: 10px;">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span style="font-size: 20px;">🟧</span>
-                                <div>
-                                    <h4 style="color: #fbbf24; margin: 0; font-size: 14px;">Blender no detectado!</h4>
-                                    <p style="color: #d4d4d8; margin: 4px 0 0 0; font-size: 12px;">
-                                        Las exportaciones a <b>.blend, .abc y .usd</b> no funcionarán. 
-                                        Puedes instalarlo manualmente en la carpeta <code>blender/</code> o usar el botón de abajo.
-                                    </p>
-                                </div>
+                gr.HTML(f"""
+                    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; padding: 12px; margin-top: 10px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 20px;">❌</span>
+                            <div>
+                                <h4 style="color: #ef4444; margin: 0; font-size: 14px;">Error: Blender no pudo descargarse automáticamente</h4>
+                                <p style="color: #d4d4d8; margin: 4px 0 0 0; font-size: 12px;">
+                                    Las exportaciones avanzadas no funcionarán. Por favor, instala Blender 4.2 manualmente en la carpeta <code>blender/</code>.
+                                </p>
                             </div>
                         </div>
-                    """)
-                    blender_btn = gr.Button("📥 Instalar Blender 4.2 Automáticamente (600MB)", variant="primary", size="sm")
-                     # Click registration will be done later when debug_console is defined
+                    </div>
+                """)
         with gr.Column(scale=2):
             gr.Markdown(f"<div style='text-align: right; color: #71717a; font-size: 12px;'>v1.0.1-optimized</div>")
 
@@ -1430,12 +1406,6 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
 
             with gr.Accordion("📜 Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))
-
-    if blender_btn is not None:
-        blender_btn.click(
-            fn=ui_install_blender,
-            outputs=[blender_warning, blender_btn, debug_console]
-        )
 
     generate_btn.click(
         fn=run_inference,
