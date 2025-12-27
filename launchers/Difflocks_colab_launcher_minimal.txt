@@ -26,7 +26,7 @@ for name in ["natten", "gradio", "httpx", "uvicorn", "matplotlib", "PIL", "media
     logging.getLogger(name).setLevel(logging.CRITICAL)
 
 # --- CONFIGURACIÓN ---
-REPO_URL = "https://github.com/pinokiofactory/DiffLocks-Studio.git"
+REPO_URL = "https://github.com/arqdariogomez/DiffLocks-Studio.git"
 REPO_DIR = "/content/DiffLocks-Studio"
 DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
 CHECKPOINTS_SUBDIR = "checkpoints/difflocks_diffusion"
