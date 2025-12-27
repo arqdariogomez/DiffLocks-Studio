@@ -104,14 +104,13 @@ PHASES = [
 
 def auto_check_blender():
     """Checks for blender at startup and downloads it if missing in local/pinokio."""
+    global cfg
     if cfg.platform in ['pinokio', 'local'] and not cfg.blender_exe.exists():
         print("🟧 Blender no detectado. Iniciando descarga automática...")
         try:
-            from blender_installer import download_blender
             success = download_blender(cfg.repo_dir / "blender")
             if success:
                 from platform_config import Config
-                global cfg
                 cfg = Config.detect()
                 print(f"✅ Blender instalado automáticamente en: {cfg.blender_exe}")
             else:
@@ -1302,13 +1301,13 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                     report.append("  - Status: ❌ NOT FOUND")
                     continue
                 
-                report.append(f"  - Status: ✅ EXISTS (is_dir: {p.is_dir()}, is_link: {p.is_link()})")
+                report.append(f"  - Status: ✅ EXISTS (is_dir: {p.is_dir()}, is_symlink: {p.is_symlink()})")
                 try:
                     items = list(p.iterdir())
                     report.append(f"  - Contents ({len(items)} items):")
                     for item in items[:15]:
                         suffix = "/" if item.is_dir() else ""
-                        link = f" -> {os.readlink(item)}" if item.is_link() else ""
+                        link = f" -> {os.readlink(item)}" if item.is_symlink() else ""
                         report.append(f"    - {item.name}{suffix}{link}")
                     if len(items) > 15: report.append("    - ... (truncated)")
                 except Exception as e:
@@ -1413,7 +1412,7 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
         outputs=[plot_3d, preview_2d, status_html, result_group, download_file, debug_console, generate_btn, download_group]
     )
 
-if __name__ == "__main__":
+def main():
     # Launch parameters optimized for different platforms
     launch_kwargs = {
         "server_name": "0.0.0.0",
@@ -1427,3 +1426,6 @@ if __name__ == "__main__":
         launch_kwargs["height"] = 1000
     
     demo.queue().launch(**launch_kwargs)
+
+if __name__ == "__main__":
+    main()

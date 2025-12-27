@@ -35,7 +35,7 @@ class Config:
                 data_checkpoints.mkdir(parents=True, exist_ok=True)
             
             # If local exists and is NOT a link, move contents to data_dir then delete local
-            if local_checkpoints.exists() and not local_checkpoints.is_link():
+            if local_checkpoints.exists() and not local_checkpoints.is_symlink():
                 import shutil
                 print(f"🔄 Moving existing checkpoints to persistent storage: {data_checkpoints}")
                 for item in local_checkpoints.iterdir():
