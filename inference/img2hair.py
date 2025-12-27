@@ -296,14 +296,17 @@ class DiffLocksInference():
             
             def p_callback(info):
                 i = info['i']
+                # SYNC PROGRESS: Map the 100 diffusion steps to the 0.08-0.55 range of the global UI
+                # We use the total steps from info if available, else self.nr_iters_denoise
+                total = self.nr_iters_denoise
                 if progress is not None:
-                    progress(0.2 + 0.6 * (i / self.nr_iters_denoise), desc=f"Diffusion {i}/{self.nr_iters_denoise}")
+                    # i goes from 0 to total-1
+                    current_progress = i / total
+                    progress(0.2 + 0.6 * current_progress, desc=f"Diffusion {i}/{total}")
                 
                 # Yield logs to app.py every 10 steps
                 if i % 10 == 0:
-                    # We can't 'yield' from inside a callback function directly in Python, 
-                    # but we can print for the terminal and let the outer loop handle the yielding.
-                    print(f"🔄 Diffusion: Step {i}/{self.nr_iters_denoise} (sigma={info['sigma']:.4f})")
+                    print(f"🔄 Diffusion: Step {i}/{total} (sigma={info['sigma']:.4f})")
             
             # Sampling (No autocast to match reference)
             # Use yielding version for progress updates

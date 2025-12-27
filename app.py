@@ -82,12 +82,16 @@ except ImportError:
     print("   Or if using Pinokio: Click 'Terminal' and run 'bin\\python.exe -m pip install natten'")
 
 # --- 2. KAGGLE UI CONSTANTS ---
+# Dynamic time estimation based on NATTEN presence
+DIFFUSION_TIME = 180 if HAS_NATTEN else 450 # 3 min vs 7.5 min (4.5s/it)
+DECODING_TIME = 120 # GPU decoding is fast
+
 PHASES = [
     ("init", "🚀 Initializing", 5, 0.00, 0.01),
     ("1/5", "📸 Preprocessing image", 10, 0.01, 0.03),
     ("2/5", "🔍 Extracting features", 20, 0.03, 0.08),
-    ("3/5", "✨ Running diffusion", 180, 0.08, 0.55), # GPU: 3 min (optimized from 6)
-    ("4/5", "🧶 Decoding strands", 120, 0.55, 0.75), # GPU: 2 min (optimized from 3)
+    ("3/5", "✨ Running diffusion", DIFFUSION_TIME, 0.08, 0.55),
+    ("4/5", "🧶 Decoding strands", DECODING_TIME, 0.55, 0.75),
     ("5/5", "🏁 Finalizing inference", 5, 0.75, 0.78),
     ("preview_2d", "🎨 Creating 2D preview", 10, 0.78, 0.82),
     ("preview_3d", "🎨 Creating Interactive 3D", 15, 0.82, 0.88),
