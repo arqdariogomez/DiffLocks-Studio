@@ -309,6 +309,8 @@ def main():
         try:
             from google.colab import userdata
             token = userdata.get('HF_TOKEN')
+            if token:
+                os.environ["HF_TOKEN"] = token # Export for other tools
         except:
             pass
             
@@ -356,6 +358,8 @@ def main():
                 return True
 
     # 3. Try private HF repo if specified (Alternative to Google Drive for HF/Colab)
+    # Note: On Kaggle, if you have a dataset connected, it's found in step 2 (Faster).
+    # This step is the universal fallback for Colab, HF Spaces, or local without datasets.
     hf_ckpt_repo = os.environ.get("HF_CHECKPOINTS_REPO")
     
     # Auto-detect private repo if not specified but token is present
