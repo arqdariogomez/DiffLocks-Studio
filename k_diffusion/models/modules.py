@@ -11,17 +11,18 @@ from . import flags, flops
 def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
     # Fallback implementation of Neighborhood Attention using Shift-and-Sum
     # This is MUCH faster and more memory-efficient than F.unfold on many systems.
-    # It avoids massive intermediate tensors by using slicing and point-wise operations.
     # q, k, v: [N, H, W, Heads, Dim]
     N, H, W, Heads, Dim = q.shape
     r = (kernel_size // 2) * dilation
     
-    # [N, Heads, Dim, H, W]
-    q = q.permute(0, 3, 4, 1, 2) * scale
-    k = k.permute(0, 3, 4, 1, 2)
-    v = v.permute(0, 3, 4, 1, 2)
+    # [N*Heads, Dim, H, W]
+    # We collapse N and Heads to 4D to ensure compatibility with F.pad(mode='replicate')
+    q = q.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W) * scale
+    k = k.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
+    v = v.permute(0, 3, 4, 1, 2).reshape(-1, Dim, H, W)
     
     # Use replicate padding to handle boundaries (similar to NATTEN)
+    # 4D input [B, C, H, W] with 4-tuple pad works on all Torch versions
     k_p = F.pad(k, (r, r, r, r), mode='replicate')
     v_p = F.pad(v, (r, r, r, r), mode='replicate')
     
@@ -31,14 +32,14 @@ def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
         for j in range(kernel_size):
             ii = i * dilation
             jj = j * dilation
-            # Slice the shifted neighborhood: [N, Heads, Dim, H, W]
-            ki = k_p[:, :, :, ii:ii+H, jj:jj+W]
-            # Dot product over Dim: [N, Heads, H, W]
-            score = (q * ki).sum(dim=2)
+            # Slice the shifted neighborhood: [B, Dim, H, W]
+            ki = k_p[:, :, ii:ii+H, jj:jj+W]
+            # Dot product over Dim: [B, H, W]
+            score = (q * ki).sum(dim=1)
             attn_scores.append(score)
             
-    # [N, Heads, K*K, H, W]
-    attn_probs = torch.stack(attn_scores, dim=2).softmax(dim=2)
+    # [B, K*K, H, W]
+    attn_probs = torch.stack(attn_scores, dim=1).softmax(dim=1)
     
     out = torch.zeros_like(q)
     # Apply weights to shifted values
@@ -47,13 +48,13 @@ def na2d_pytorch(q, k, v, kernel_size, dilation=1, scale=1.0):
         for j in range(kernel_size):
             ii = i * dilation
             jj = j * dilation
-            vi = v_p[:, :, :, ii:ii+H, jj:jj+W]
-            # Weighted sum: [N, Heads, Dim, H, W]
-            out += attn_probs[:, :, idx:idx+1, :, :] * vi
+            vi = v_p[:, :, ii:ii+H, jj:jj+W]
+            # Weighted sum: [B, Dim, H, W]
+            out += attn_probs[:, idx:idx+1, :, :] * vi
             idx += 1
             
-    # Back to [N, H, W, Heads, Dim]
-    return out.permute(0, 3, 4, 1, 2)
+    # Reshape back to [N, Heads, Dim, H, W] then permute to [N, H, W, Heads, Dim]
+    return out.view(N, Heads, Dim, H, W).permute(0, 3, 4, 1, 2)
 
 
 try:
