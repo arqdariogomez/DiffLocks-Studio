@@ -89,6 +89,31 @@ def run_cmd(cmd, desc="", cwd=None):
         if result.stderr: log(result.stderr[:200], "err")
     return result
 
+def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
+    """Ejecuta un comando y muestra su salida en tiempo real en los logs de la UI"""
+    if desc: render_status(progress_val or 50, desc)
+    
+    process = subprocess.Popen(
+        cmd, 
+        shell=isinstance(cmd, str), 
+        cwd=cwd, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.STDOUT, 
+        text=True,
+        bufsize=1
+    )
+    
+    for line in process.stdout:
+        line = line.strip()
+        if line:
+            # Filtrar líneas irrelevantes o muy largas si es necesario
+            if len(line) > 150: line = line[:147] + "..."
+            log(line, "info")
+            if progress_val: render_status(progress_val, desc)
+            
+    process.wait()
+    return process.returncode
+
 def clean_environment():
     """Limpieza selectiva para evitar conflictos de binarios sin romper el kernel de Colab"""
     if os.path.exists(MARKER_FILE):
@@ -318,8 +343,12 @@ try:
     install_dependencies()
     
     # Descargar activos y checkpoints usando el script unificado
+    log("Verificando credenciales disponibles...", "info")
+    if os.environ.get("HF_TOKEN"): log("✅ HF_TOKEN detectado.", "success")
+    if os.environ.get("MESH_USER"): log("✅ MESH_USER detectado.", "success")
+    
     render_status(82, "Descargando modelos y activos...", "running")
-    run_cmd([sys.executable, "download_checkpoints.py"], cwd=REPO_DIR)
+    run_cmd_stream([sys.executable, "download_checkpoints.py"], desc="Descargando modelos y activos...", cwd=REPO_DIR, progress_val=82)
     
     apply_device_fixes()
     

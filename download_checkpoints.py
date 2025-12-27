@@ -152,11 +152,15 @@ def download_from_meshcapade(user, password, checkpoints_dir):
                 print(f"📦 File size: {total_size / (1024*1024):.1f} MB")
                 with open(zip_path, 'wb') as f:
                     downloaded = 0
+                    last_log = 0
                     for chunk in r.iter_content(chunk_size=65536):
                         f.write(chunk)
                         downloaded += len(chunk)
-                        if total_size > 0 and downloaded % (1024*1024*10) < 65536: # Log every 10MB
-                            print(f"   ... {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB")
+                        # Log every 25MB or every 10%
+                        if downloaded - last_log > (1024*1024*25): 
+                            pct = (downloaded / total_size * 100) if total_size > 0 else 0
+                            print(f"   ... {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct:.1f}%)")
+                            last_log = downloaded
                 
                 print(f"📂 Extracting {name}...")
                 import zipfile
@@ -301,6 +305,9 @@ def main():
     base_dir = cfg.repo_dir
     checkpoints_dir = cfg.checkpoints_dir
     
+    print(f"📍 Repo Dir: {base_dir}")
+    print(f"📍 Checkpoints Dir: {checkpoints_dir}")
+    
     # 1. Download Public Assets (Always needed)
     token = os.environ.get("HF_TOKEN")
     
@@ -311,10 +318,14 @@ def main():
             token = userdata.get('HF_TOKEN')
             if token:
                 os.environ["HF_TOKEN"] = token # Export for other tools
+                print("✅ HF_TOKEN detected from Colab Secrets.")
         except:
             pass
             
     if token == "null" or token == "": token = None
+    
+    if os.environ.get("MESH_USER"):
+        print(f"✅ Meshcapade user detected: {os.environ.get('MESH_USER')}")
     download_public_assets(base_dir, token=token)
 
     # 2. Check for Checkpoints
@@ -430,14 +441,20 @@ def main():
                     print("❌ Error: Received HTML instead of a zip file. The download link might be expired or restricted.")
                     return False
 
+                total_size = int(r.headers.get('content-length', 0))
+                print(f"📦 File size: {total_size / (1024*1024):.1f} MB")
                 with open(zip_path, 'wb') as f:
                     downloaded = 0
+                    last_log = 0
                     for chunk in r.iter_content(chunk_size=1024*1024): # 1MB chunks
                         if chunk:
                             f.write(chunk)
                             downloaded += len(chunk)
-                            if downloaded % (1024*1024*50) < 1024*1024: # Log every 50MB
-                                print(f"   ... {downloaded / (1024*1024):.1f} MB downloaded")
+                            # Log every 50MB
+                            if downloaded - last_log > (1024*1024*50):
+                                pct = (downloaded / total_size * 100) if total_size > 0 else 0
+                                print(f"   ... {downloaded / (1024*1024):.1f} MB downloaded ({pct:.1f}%)")
+                                last_log = downloaded
                 
                 print(f"✅ Download complete ({downloaded / (1024*1024):.1f} MB).")
                 if unzip_checkpoints(zip_path, checkpoints_dir):
