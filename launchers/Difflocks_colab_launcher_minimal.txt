@@ -316,6 +316,11 @@ try:
 
     # 4. Instalación y Parches
     install_dependencies()
+    
+    # Descargar activos y checkpoints usando el script unificado
+    render_status(82, "Descargando modelos y activos...", "running")
+    run_cmd([sys.executable, "download_checkpoints.py"], cwd=REPO_DIR)
+    
     apply_device_fixes()
     
     # 5. Ejecución
