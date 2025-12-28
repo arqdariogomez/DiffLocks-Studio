@@ -453,11 +453,11 @@ class DiffLocksInference():
         if progress is not None: progress(0.78, desc="Completed")
         yield "result", strands, None
 
-        except Exception as e:
-            traceback.print_exc()
-            yield "error", f"Inference error: {str(e)}"
-        finally:
-            force_cleanup()
+    except Exception as e:
+        traceback.print_exc()
+        yield "error", f"Inference error: {str(e)}"
+    finally:
+        force_cleanup()
 
     def file2hair(self, fpath, out, cfg_val=None, progress=None):
         img = cv2.imread(fpath)
