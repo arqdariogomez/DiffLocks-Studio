@@ -991,41 +991,45 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         plot_3d_fig = generate_preview_3d(preview_npz if preview_npz.exists() else npz_path, log_capture)
         
         # SHOW BOTH PREVIEWS TOGETHER (2D and 3D) in Tabs
+        # Also show download group with initial files (.obj and .npz)
+        initial_downloads = [str(f) for f in [npz_path] if f.exists()]
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()),
             preview_2d: preview_2d_html,
             plot_3d: plot_3d_fig if plot_3d_fig else gr.update(value=create_empty_3d_plot("⚠️ Could not render 3D")),
             result_group: gr.update(visible=True),
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_group: gr.update(visible=False)
+            download_file: initial_downloads,
+            download_group: gr.update(visible=True)
         }
         
         tracker.set_phase("obj_export")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs()),
-            download_group: gr.update(visible=False)
+            debug_console: render_debug_console(log_capture.get_logs())
         }
         obj_path = job_dir / "hair.obj"
-        export_obj(npz_path, obj_path, log_capture)
+        if export_obj(npz_path, obj_path, log_capture):
+            initial_downloads.append(str(obj_path))
+            
         yield { 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_group: gr.update(visible=False)
+            download_file: initial_downloads
         }
         
         tracker.set_phase("blender")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs()),
-            download_group: gr.update(visible=False)
+            debug_console: render_debug_console(log_capture.get_logs())
         }
         blender_outputs = export_blender(npz_path, job_dir, export_formats, log_capture)
+        final_downloads = initial_downloads + [str(p) for p in blender_outputs if p and Path(p).exists()]
+        
         yield { 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_group: gr.update(visible=False)
+            download_file: final_downloads
         }
         
-        # ZIP creation removed per user request
         # 12. Final completion
         log_capture.add_log("✨ Process finished successfully!")
         
@@ -1035,8 +1039,6 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         # Ensure we return 100% and show all results
         final_status = create_complete_html()
         
-        # Include .npz in final downloads as requested by user
-        final_downloads = [str(f) for f in [obj_path, npz_path] + [Path(p) for p in blender_outputs if p] if f and Path(f).exists()]
         log_capture.add_log(f"📦 Final assets ready for download: {len(final_downloads)} files")
         for f in final_downloads:
             log_capture.add_log(f"  - {Path(f).name}")

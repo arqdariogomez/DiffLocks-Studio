@@ -29,5 +29,6 @@ huggingface_hub
 requests
 matplotlib
 plotly
+nbformat
 spaces
 mediapipe

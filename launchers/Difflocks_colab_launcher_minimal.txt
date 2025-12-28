@@ -172,7 +172,7 @@ def clean_environment():
     os._exit(0)
 
 def install_blender():
-    """Installs Blender 4.2.5 for advanced exports"""
+    """Installs Blender 4.2.5 for advanced exports and its dependencies"""
     blender_dir = "/content/blender"
     blender_exe = Path(blender_dir) / "blender"
     
@@ -180,7 +180,11 @@ def install_blender():
         log("Blender is already installed.", "success")
         return True
 
-    render_status(75, "Downloading and installing Blender 4.2.5...", "running")
+    render_status(75, "Installing Blender dependencies...", "running")
+    # Install common Blender dependencies on Linux
+    run_cmd("apt-get update -y && apt-get install -y libsm6 libxext6 libxrender1 libgl1-mesa-glx libxi6 libxkbcommon0 libdbus-1-3 libxfixes3")
+
+    render_status(77, "Downloading and installing Blender 4.2.5...", "running")
     os.makedirs(blender_dir, exist_ok=True)
     
     url = "https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz"
@@ -378,14 +382,22 @@ if __name__ == "__main__":
         
         # Log interesting lines to the console
         line_clean = line.strip()
-        if any(x in line_clean.lower() for x in ["public url", "share link", "error", "exception", "failed", "loading"]):
+        if any(x in line_clean.lower() for x in ["public url", "share link", "error", "exception", "failed", "loading", "gradio.app", "running on"]):
             log(f"[Studio] {line_clean}", "info")
 
-        if "public URL:" in line or "Share link:" in line:
-            parts = line.split("public URL:") if "public URL:" in line else line.split("Share link:")
-            url = parts[1].strip()
-            # Remove any trailing escape codes or spaces
-            url = url.split(" ")[0].strip()
+        if any(x in line for x in ["public URL:", "Share link:", "gradio.app"]):
+            url = None
+            if "public URL:" in line: url = line.split("public URL:")[1].strip()
+            elif "Share link:" in line: url = line.split("Share link:")[1].strip()
+            elif "gradio.app" in line:
+                # Find the URL in the line using a simple regex-like search
+                import re
+                found = re.search(r'(https?://[^\s]+\.gradio\.app)', line)
+                if found: url = found.group(1)
+            
+            if url:
+                # Remove any trailing escape codes or spaces
+                url = url.split(" ")[0].strip()
             
             render_status(100, "🚀 STUDIO READY", "success")
             
