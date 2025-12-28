@@ -158,9 +158,48 @@ def clean_environment():
         if os.path.exists(tmp): shutil.rmtree(tmp, ignore_errors=True)
 
     with open(MARKER_FILE, "w") as f: f.write("done")
-    render_status(100, "Environment cleaned. RESTARTING KERNEL...", "success")
-    time.sleep(2)
+    
+    msg = """
+    <div style="background: #27272a; border: 2px solid #fbbf24; border-radius: 8px; padding: 20px; font-family: sans-serif;">
+        <h3 style="color: #fbbf24; margin-top: 0;">🔄 Kernel Restart Required</h3>
+        <p style="color: #e4e4e7;">The environment has been cleaned to avoid library conflicts. <b>Colab will now restart the session.</b></p>
+        <p style="color: #a1a1aa; font-size: 14px;">After the restart (5-10 seconds), please <b>Run this cell again</b> to continue with the installation.</p>
+    </div>
+    """
+    clear_output()
+    display(HTML(msg))
+    time.sleep(5)
     os._exit(0)
+
+def install_blender():
+    """Installs Blender 4.2.5 for advanced exports"""
+    blender_dir = "/content/blender"
+    blender_exe = Path(blender_dir) / "blender"
+    
+    if blender_exe.exists():
+        log("Blender is already installed.", "success")
+        return True
+
+    render_status(75, "Downloading and installing Blender 4.2.5...", "running")
+    os.makedirs(blender_dir, exist_ok=True)
+    
+    url = "https://download.blender.org/release/Blender4.2/blender-4.2.5-linux-x64.tar.xz"
+    tar_path = "/tmp/blender.tar.xz"
+    
+    try:
+        run_cmd(f"wget -q -O {tar_path} '{url}'")
+        run_cmd(f"tar -xf {tar_path} -C {blender_dir} --strip-components=1")
+        if os.path.exists(tar_path): os.remove(tar_path)
+        
+        if blender_exe.exists():
+            log("Blender 4.2.5 installed successfully.", "success")
+            return True
+        else:
+            log("Blender installation failed.", "err")
+            return False
+    except Exception as e:
+        log(f"Error installing Blender: {e}", "err")
+        return False
 
 def setup_drive():
     """Configures Google Drive persistence robustly"""
@@ -361,13 +400,13 @@ if __name__ == "__main__":
                         <p style="color: #a1a1aa; margin: 0 0 10px 0; font-size: 14px;">Access via this URL (or use the frame below):</p>
                         <a href="{url}" target="_blank" style="color: #818cf8; font-size: 18px; font-weight: 600; text-decoration: none; word-break: break-all;">{url}</a>
                     </div>
-                    <p style="color: #71717a; font-size: 12px; margin-top: 15px;">⚠️ Keep this tab open while using the app.</p>
+                    <p style="color: #71717a; font-size: 12px; margin-top: 15px;">⚠️ Keep this cell running while using the app.</p>
                 </div>
             '''))
             # Try to display inline frame if possible
             try:
-                from google.colab.output import _publish as publish
-                publish.display_html(f'<iframe src="{url}" width="100%" height="1000" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>')
+                from IPython.display import IFrame
+                display(IFrame(src=url, width="100%", height=1000))
             except:
                 pass
         if "Error" in line or "Exception" in line:
@@ -406,6 +445,7 @@ try:
 
     # 4. Installation & Patches
     install_dependencies()
+    install_blender()
     
     log("Checking available credentials...", "info")
     if os.environ.get("HF_TOKEN"): log("✅ HF_TOKEN detected.", "success")

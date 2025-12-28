@@ -34,6 +34,6 @@ def sample_images_cfg_yield(nr_images, cfg_val, cfg_interval, model_ema, model_c
     
     # K.sampling.sample_dpmpp_2m_sde_cfg now yields progress
     # We yield x_0 at each step for real-time preview (though currently we only use the last one)
-    for x_step, i, sigma in K.sampling.sample_dpmpp_2m_sde_cfg(model_fn, x, sigmas, cfg_val, cfg_interval, extra_args=extra_args,  eta=0.0, solver_type='heun', disable=False, callback=callback):
+    for x_step, i, sigma in K.sampling.sample_dpmpp_2m_sde_cfg(model_fn, x, sigmas, cfg_val, cfg_interval, extra_args=extra_args,  eta=0.0, solver_type='heun', disable=True, callback=callback):
         # We can yield i and sigma to the caller
         yield x_step, i, sigma

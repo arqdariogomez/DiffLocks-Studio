@@ -191,10 +191,14 @@ class Mediapipe:
 
 class DiffLocksInference():
     def __init__(self, path_ckpt_strandcodec, path_config_difflocks, path_ckpt_difflocks,
-                 path_ckpt_rgb2material=None, cfg_val=1.0, nr_iters_denoise=100, nr_chunks_decode=150):
+                 path_ckpt_rgb2material=None, cfg_val=1.0, nr_iters_denoise=100, nr_chunks_decode=150,
+                 vram_gb=None):
         self.nr_chunks_decode_strands = nr_chunks_decode
         self.nr_iters_denoise = nr_iters_denoise
         self.cfg_val = cfg_val
+        self.vram_gb = vram_gb if vram_gb is not None else cfg.vram_gb
+        self.low_vram = self.vram_gb < 8.0
+        
         self.paths = { 'codec': path_ckpt_strandcodec, 'config': path_config_difflocks, 'diff': path_ckpt_difflocks, 'mat': path_ckpt_rgb2material }
         self.mediapipe_img = Mediapipe()
         self.normalization_dict = DiffLocksDataset.get_normalization_data()
@@ -213,7 +217,8 @@ class DiffLocksInference():
         
         if progress is not None: progress(0, desc="Initializing...")
         # INITIAL LOG
-        yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise} | Precision=float32"
+        vram_status = f"VRAM: {self.vram_gb:.1f}GB" + (" (Low VRAM Mode 🚀)" if self.low_vram else " (Optimal)")
+        yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise} | {vram_status}"
 
         try:
             # 1. GEOMETRY
@@ -227,21 +232,26 @@ class DiffLocksInference():
             
             cropped_face = crop_face(frame, lms, 770)
             del frame
-            rgb_img_gpu = torch.tensor(cropped_face).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.0
-            rgb_img_cpu = rgb_img_gpu.cpu().clone() # Backup for final save
-            yield "log", "✅ Face detected and cropped (Zoom 2.8x)"
+            
+            # Use CPU for image if low vram during preprocessing
+            preprocess_device = "cpu" if self.low_vram else ("cuda" if torch.cuda.is_available() else "cpu")
+            rgb_img_prep = torch.tensor(cropped_face).to(preprocess_device).permute(2,0,1).unsqueeze(0).float()/255.0
+            rgb_img_cpu = rgb_img_prep.cpu().clone() 
+            yield "log", f"✅ Face detected (Pre-processing on {preprocess_device})"
             
             # 2. DINO
             yield "status", "🦖 2/5: Extracting Features (DINOv2)..."
             if progress is not None: progress(0.1, desc="Extracting DINO features...")
             
-            # Load DINOv2 model with caching
+            # Load DINOv2 model with caching - Force CPU if low vram
             from inference.load_dinov2 import load_dinov2
-            dinov2, tf = load_dinov2(device=rgb_img_gpu.device)
+            dino_device = "cpu" if self.low_vram else preprocess_device
+            yield "log", f"⏳ Loading DINOv2 on {dino_device}..."
+            dinov2, tf = load_dinov2(device=dino_device)
             
             # Extract features
             with torch.no_grad():
-                out = dinov2.forward_features(tf(rgb_img_gpu))
+                out = dinov2.forward_features(tf(rgb_img_prep.to(dino_device)))
             patch = out["x_norm_patchtokens"]
             cls_tok = out["x_norm_clstoken"]
             h = w = int(patch.shape[1]**0.5)
@@ -249,15 +259,18 @@ class DiffLocksInference():
             
             patch_emb_cpu = patch_emb.cpu().clone()
             cls_tok_cpu = cls_tok.cpu().clone()
-            del dinov2, out, patch, cls_tok, patch_emb, rgb_img_gpu
+            del dinov2, out, patch, cls_tok, patch_emb, rgb_img_prep
             force_cleanup()
-            yield "log", "✅ Embeddings successfully generated"
+            yield "log", "✅ Embeddings successfully generated (float32)"
             
             # 3. DIFFUSION
             yield "status", "🌫️ 3/5: Diffusion (Generating Hair)..."
-            yield "log", "⏳ Loading diffusion model..."
+            yield "log", "⏳ Loading diffusion model to GPU..."
             conf = K.config.load_config(self.paths['config'])
-            model = K.config.make_denoiser_wrapper(conf)(K.config.make_model(conf).to("cuda" if torch.cuda.is_available() else "cpu"))
+            
+            # Always try to use GPU for diffusion as it is the most heavy part
+            diff_device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = K.config.make_denoiser_wrapper(conf)(K.config.make_model(conf).to(diff_device))
             model.float() # Force float32
             # DEBUG PATCH
 
@@ -350,39 +363,51 @@ class DiffLocksInference():
             yield "log", "⏳ Loading Strand VAE/Codec..."
             if progress is not None: progress(0.55, desc="Decoding strands...")
             
-            # Move codec to GPU for speed
-            codec_device = "cuda" if torch.cuda.is_available() else "cpu"
-            codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).to(codec_device)
-            codec.load_state_dict(torch.load(self.paths['codec'], map_location=codec_device, weights_only=False))
-            codec.eval()
-            
-            # Move normalization dict to GPU
-            norm_dict_gpu = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.normalization_dict.items()}
-            mesh_data_gpu = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.scalp_mesh_data.items()}
-            
-            yield "log", f"⏳ Processing {self.nr_chunks_decode_strands} geometry chunks (GPU Accelerated)..."
-            
-            # Ensure GPU for decoder
-            scalp_texture = scalp_cpu[:,0:-1].to(codec_device).float()
-            density_f32 = density.to(codec_device).float()
+        # Move codec to GPU for speed, unless low vram
+        codec_device = "cuda" if torch.cuda.is_available() and not self.low_vram else "cpu"
+        codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).to(codec_device)
+        codec.load_state_dict(torch.load(self.paths['codec'], map_location=codec_device, weights_only=False))
+        codec.eval()
+        
+        # Move normalization dict to appropriate device
+        norm_dict_gpu = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.normalization_dict.items()}
+        
+        # For low vram, we keep mesh data on CPU and use CPU TBN func
+        if self.low_vram:
+            mesh_data_to_use = self.mesh_data_cpu
+            actual_chunks = self.nr_chunks_decode_strands * 2 # Double chunks for smaller peak memory
+        else:
+            mesh_data_to_use = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.scalp_mesh_data.items()}
+            actual_chunks = self.nr_chunks_decode_strands
+        
+        yield "log", f"⏳ Processing {actual_chunks} geometry chunks (Device: {codec_device})..."
+        
+        # Ensure correct device for decoder inputs
+        scalp_texture = scalp_cpu[:,0:-1].to(codec_device).float()
+        density_f32 = density.to(codec_device).float()
 
-            def decoding_callback(i, total):
-                if progress is not None:
-                    # Map decoding chunks (0 to total) to 0.55-0.75 range
-                    current_progress = i / total
-                    mapped_progress = 0.55 + (0.75 - 0.55) * current_progress
-                    progress(mapped_progress, desc=f"Decoding {i}/{total}")
-                if i % 10 == 0:
-                    print(f"🧬 Decoding: Chunk {i}/{total}")
-            
-            # Use the native GPU function for speed and stability
-            tbn_func = tbn_space_to_world_gpu_native if torch.cuda.is_available() else tbn_space_to_world_cpu_safe
-            
-            # Call the function with the appropriate device-aware function
-            strands, _ = sample_strands_from_scalp_with_density(
-                scalp_texture, density_f32, codec, norm_dict_gpu, 
-                mesh_data_gpu, tbn_func, self.nr_chunks_decode_strands,
-                callback=decoding_callback)
+        def decoding_callback(i, total):
+            if progress is not None:
+                # Map decoding chunks (0 to total) to 0.55-0.75 range
+                current_progress = i / total
+                mapped_progress = 0.55 + (0.75 - 0.55) * current_progress
+                progress(mapped_progress, desc=f"Decoding {i}/{total}")
+            if i % 10 == 0:
+                print(f"🧬 Decoding: Chunk {i}/{total}")
+        
+        # Use the native GPU function for speed, but fallback to CPU if VRAM is very low
+        # to avoid OOM during the large texture/mesh mapping operations
+        use_gpu_tbn = torch.cuda.is_available() and not self.low_vram
+        tbn_func = tbn_space_to_world_gpu_native if use_gpu_tbn else tbn_space_to_world_cpu_safe
+        
+        if self.low_vram:
+            yield "log", "⚠️ Low VRAM: Using CPU-safe TBN transformation"
+        
+        # Call the function with the appropriate device-aware function
+        strands, _ = sample_strands_from_scalp_with_density(
+            scalp_texture, density_f32, codec, norm_dict_gpu, 
+            mesh_data_to_use, tbn_func, actual_chunks,
+            callback=decoding_callback)
             
             if strands is None or strands.shape[0] == 0:
                 yield "error", "Decoding failed: no strands generated. Check the density map sum."

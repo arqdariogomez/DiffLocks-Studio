@@ -586,8 +586,13 @@ def load_model():
                 
             raise FileNotFoundError(error_msg)
     
-    print(f"Loading Model on {DEVICE} (Precision=float32): {ckpt_files[0].name}")
-    model = DiffLocksInference(str(vae_files[0]), str(conf_path), str(ckpt_files[0]), DEVICE)
+    print(f"Loading Model on {DEVICE} (VRAM: {cfg.vram_gb:.1f}GB, Precision=float32): {ckpt_files[0].name}")
+    model = DiffLocksInference(
+        path_ckpt_strandcodec=str(vae_files[0]), 
+        path_config_difflocks=str(conf_path), 
+        path_ckpt_difflocks=str(ckpt_files[0]),
+        vram_gb=cfg.vram_gb
+    )
     print("✅ Model Loaded!")
 
 # --- 6. UTILITY FUNCTIONS ---
@@ -1032,6 +1037,9 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         
         # Include .npz in final downloads as requested by user
         final_downloads = [str(f) for f in [obj_path, npz_path] + [Path(p) for p in blender_outputs if p] if f and Path(f).exists()]
+        log_capture.add_log(f"📦 Final assets ready for download: {len(final_downloads)} files")
+        for f in final_downloads:
+            log_capture.add_log(f"  - {Path(f).name}")
         
         # Final result yield
         yield {
@@ -1309,7 +1317,7 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
         with gr.Column(scale=4):
             with gr.Group():
                 gr.Markdown("### 📥 Step 1: Input Image")
-                image_input = gr.Image(type="filepath", label="Single Image (RGB)", height=400)
+                image_input = gr.Image(type="filepath", label="Single Image (RGB)", height=400, sources=["upload", "clipboard"])
                 
                 with gr.Accordion("⚙️ Advanced Settings", open=False):
                     cfg_slider = gr.Slider(1.0, 7.0, 2.5, step=0.1, label="CFG Scale")
