@@ -29,10 +29,18 @@ for name in ["natten", "gradio", "httpx", "uvicorn", "matplotlib", "PIL", "media
 REPO_URL = "https://github.com/arqdariogomez/DiffLocks-Studio.git"
 REPO_DIR = "/content/DiffLocks-Studio"
 DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
-CHECKPOINTS_SUBDIR = "checkpoints/difflocks_diffusion"
+CHECKPOINTS_SUBDIR = "checkpoints"
 MARKER_FILE = "/content/.clean_done"
 HF_WHEELS_REPO = "arqdariogomez/difflocks-env"
 WHEELS_DIR = "/content/wheels"
+
+# Auto-detect HF_TOKEN from Colab Secrets if present
+try:
+    from google.colab import userdata
+    token = userdata.get('HF_TOKEN')
+    if token: os.environ['HF_TOKEN'] = token
+except:
+    pass
 
 # --- UI DASHBOARD ---
 from IPython.display import display, HTML, clear_output
@@ -159,7 +167,7 @@ def setup_drive():
     if os.path.exists("/content/drive/MyDrive"):
         log("Google Drive is already mounted.", "success")
         os.makedirs(DRIVE_PATH, exist_ok=True)
-        target_cp = os.path.join(DRIVE_PATH, CHECKPOINTS_SUBDIR)
+        target_cp = os.path.join(DRIVE_PATH, "checkpoints")
         os.makedirs(target_cp, exist_ok=True)
         return target_cp
 
@@ -171,7 +179,7 @@ def setup_drive():
         
         if os.path.exists("/content/drive/MyDrive"):
             os.makedirs(DRIVE_PATH, exist_ok=True)
-            target_cp = os.path.join(DRIVE_PATH, CHECKPOINTS_SUBDIR)
+            target_cp = os.path.join(DRIVE_PATH, "checkpoints")
             os.makedirs(target_cp, exist_ok=True)
             return target_cp
     except Exception as e:
@@ -294,6 +302,7 @@ if __name__ == "__main__":
         kwargs['share'] = True
         kwargs['server_name'] = '0.0.0.0'
         kwargs['show_error'] = True
+        kwargs['inline'] = True
         return original_launch(*args, **kwargs)
     Blocks.launch = launch_with_share
     
@@ -324,7 +333,7 @@ if __name__ == "__main__":
                         if line:
                             if any(x in line.lower() for x in ["error", "exception", "failed", "loading", "public url"]):
                                 log(f"[Studio] {line}", "info")
-                            print(f"[Debug] {line}")
+                            # print(f"[Debug] {line}")
                     last_size = f.tell()
             time.sleep(1)
 
@@ -332,11 +341,16 @@ if __name__ == "__main__":
     threading.Thread(target=monitor_logs, daemon=True).start()
 
     for line in process.stdout:
-        print(line, end="")
+        # print(line, end="")
         
         if "public URL:" in line:
             url = line.split("public URL:")[1].strip()
             render_status(100, "🚀 STUDIO READY", "success")
+            
+            # Clear output for a clean inline experience like Kaggle
+            from IPython.display import clear_output
+            clear_output(wait=True)
+            
             display(HTML(f'''
                 <div style="background: #18181b; border: 2px solid #34d399; border-radius: 12px; padding: 20px; margin-top: 20px; font-family: sans-serif;">
                     <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
@@ -344,12 +358,18 @@ if __name__ == "__main__":
                         <span style="font-size: 24px; font-weight: 700; color: #34d399;">DiffLocks Studio Online!</span>
                     </div>
                     <div style="background: #27272a; padding: 15px; border-radius: 8px; border: 1px solid #3f3f46;">
-                        <p style="color: #a1a1aa; margin: 0 0 10px 0; font-size: 14px;">Access via this URL:</p>
+                        <p style="color: #a1a1aa; margin: 0 0 10px 0; font-size: 14px;">Access via this URL (or use the frame below):</p>
                         <a href="{url}" target="_blank" style="color: #818cf8; font-size: 18px; font-weight: 600; text-decoration: none; word-break: break-all;">{url}</a>
                     </div>
                     <p style="color: #71717a; font-size: 12px; margin-top: 15px;">⚠️ Keep this tab open while using the app.</p>
                 </div>
             '''))
+            # Try to display inline frame if possible
+            try:
+                from google.colab.output import _publish as publish
+                publish.display_html(f'<iframe src="{url}" width="100%" height="1000" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>')
+            except:
+                pass
         if "Error" in line or "Exception" in line:
             log(f"Error detected: {line}", "err")
 
@@ -365,16 +385,23 @@ try:
         run_cmd(["git", "clone", REPO_URL, REPO_DIR])
     
     # 3. Checkpoints Persistence
-    local_cp = os.path.join(REPO_DIR, CHECKPOINTS_SUBDIR)
+    local_cp = os.path.join(REPO_DIR, "checkpoints")
     if cp_drive:
+        # If local exists and is not a link, we need to merge or move
         if os.path.exists(local_cp) and not os.path.islink(local_cp):
+            # Move existing files to drive if drive is empty
+            if not any(Path(cp_drive).iterdir()):
+                log("Moving local checkpoints to Drive...", "info")
+                for item in os.listdir(local_cp):
+                    shutil.move(os.path.join(local_cp, item), os.path.join(cp_drive, item))
             shutil.rmtree(local_cp)
+        
         if not os.path.exists(local_cp):
             os.makedirs(os.path.dirname(local_cp), exist_ok=True)
             os.symlink(cp_drive, local_cp)
-            log("Persistence enabled successfully.", "success")
+            log("Checkpoints persistence enabled (Linked to Drive).", "success")
     else:
-        log("Temporary storage enabled.", "info")
+        log("Temporary storage enabled for checkpoints.", "info")
         os.makedirs(local_cp, exist_ok=True)
 
     # 4. Installation & Patches
