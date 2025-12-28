@@ -332,23 +332,28 @@ def install_environment():
             else:
                 log("Checkpoints already present in repo", "success")
         else:
-            log("Checkpoints not found. Checking Secrets for Meshcapade login...", "info")
-            mesh_user, mesh_pass = None, None
+            log("Checkpoints not found. Checking Secrets for download credentials...", "info")
+            mesh_user, mesh_pass, hf_token = None, None, None
             try:
                 from kaggle_secrets import UserSecretsClient
                 secrets = UserSecretsClient()
                 mesh_user = secrets.get_secret("MESH_USER")
                 mesh_pass = secrets.get_secret("MESH_PASS")
+                hf_token = secrets.get_secret("HF_TOKEN")
             except:
-                log("Kaggle Secrets (MESH_USER/MESH_PASS) not found.", "warning")
+                log("Kaggle Secrets not found. To auto-download, add HF_TOKEN or MESH_USER/MESH_PASS to your Secrets.", "warning")
 
-            if mesh_user and mesh_pass:
+            if hf_token:
+                log("Using HF_TOKEN for automatic download...", "info")
+                os.environ["HF_TOKEN"] = hf_token
+                run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py")
+            elif mesh_user and mesh_pass:
                 log("Starting official download from Meshcapade...", "info")
                 os.environ["MESH_USER"] = mesh_user
                 os.environ["MESH_PASS"] = mesh_pass
                 run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py --meshcapade")
             else:
-                log("No credentials found. You can also manually connect a dataset named 'difflocks-checkpoints'", "warning")
+                log("❌ No credentials found. Please add HF_TOKEN to your Kaggle Secrets to auto-setup the models.", "error")
                 # Attempt generic download as fallback (might fail if private)
                 run_cmd(f"cd {REPO_DIR} && python download_checkpoints.py")
         
