@@ -320,13 +320,7 @@ import os
 import matplotlib
 matplotlib.use('Agg', force=True)
 import sys
-import threading
 import time
-
-# Redirect output to a file for parallel monitoring
-log_file = "/content/studio_output.log"
-sys.stdout = open(log_file, "w", buffering=1)
-sys.stderr = sys.stdout
 
 os.chdir('""" + REPO_DIR + """')
 sys.path.append(os.getcwd())
@@ -345,45 +339,54 @@ if __name__ == "__main__":
         return original_launch(*args, **kwargs)
     Blocks.launch = launch_with_share
     
+    # Ensure stdout is unbuffered
+    import functools
+    print = functools.partial(print, flush=True)
+    
     main()
 """)
 
+    # Use python -u for unbuffered output
     process = subprocess.Popen(
-        [sys.executable, runner_script],
+        [sys.executable, "-u", runner_script],
         cwd=REPO_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        bufsize=1
+        bufsize=1,
+        universal_newlines=True
     )
 
     log("Searching for Gradio URL...", "info")
+    log_path = "/content/studio_output.log"
     
-    def monitor_logs():
-        log_path = "/content/studio_output.log"
-        last_size = 0
-        while process.poll() is None:
-            if os.path.exists(log_path):
-                with open(log_path, "r") as f:
-                    f.seek(last_size)
-                    new_lines = f.readlines()
-                    for line in new_lines:
-                        line = line.strip()
-                        if line:
-                            if any(x in line.lower() for x in ["error", "exception", "failed", "loading", "public url"]):
-                                log(f"[Studio] {line}", "info")
-                            # print(f"[Debug] {line}")
-                    last_size = f.tell()
-            time.sleep(1)
+    # Clear previous log
+    if os.path.exists(log_path): os.remove(log_path)
 
-    import threading
-    threading.Thread(target=monitor_logs, daemon=True).start()
-
-    for line in process.stdout:
-        # print(line, end="")
+    # Use a non-blocking way to read output
+    while True:
+        line = process.stdout.readline()
+        if not line and process.poll() is not None:
+            break
+        if not line:
+            time.sleep(0.1)
+            continue
+            
+        # Write to log file for persistence
+        with open(log_path, "a") as f:
+            f.write(line)
         
-        if "public URL:" in line:
-            url = line.split("public URL:")[1].strip()
+        # Log interesting lines to the console
+        line_clean = line.strip()
+        if any(x in line_clean.lower() for x in ["public url", "share link", "error", "exception", "failed", "loading"]):
+            log(f"[Studio] {line_clean}", "info")
+
+        if "public URL:" in line or "Share link:" in line:
+            parts = line.split("public URL:") if "public URL:" in line else line.split("Share link:")
+            url = parts[1].strip()
+            # Remove any trailing escape codes or spaces
+            url = url.split(" ")[0].strip()
+            
             render_status(100, "🚀 STUDIO READY", "success")
             
             # Clear output for a clean inline experience like Kaggle
@@ -404,13 +407,13 @@ if __name__ == "__main__":
                 </div>
             '''))
             
-            # Use display(IFrame) for reliable inline Gradio
             try:
                 display(IFrame(src=url, width="100%", height=1000))
             except Exception as e:
                 log(f"IFrame display failed: {e}", "info")
+                
         if "Error" in line or "Exception" in line:
-            log(f"Error detected: {line}", "err")
+            log(f"Error detected: {line_clean}", "err")
 
 # --- MAIN FLOW ---
 try:
