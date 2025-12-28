@@ -409,49 +409,49 @@ class DiffLocksInference():
             mesh_data_to_use, tbn_func, actual_chunks,
             callback=decoding_callback)
             
-            if strands is None or strands.shape[0] == 0:
-                yield "error", "Decoding failed: no strands generated. Check the density map sum."
-                return
+        if strands is None or strands.shape[0] == 0:
+            yield "error", "Decoding failed: no strands generated. Check the density map sum."
+            return
 
-            yield "log", f"✅ 3D Geometry built: {strands.shape[0]} strands generated"
+        yield "log", f"✅ 3D Geometry built: {strands.shape[0]} strands generated"
+        
+        # 5. SAVE
+        yield "status", "💾 5/5: Saving Files..."
+        if progress is not None: progress(0.75, desc="Saving results...")
+        if out_path and strands is not None:
+            positions = strands.cpu().numpy()
+            npz_full_path = os.path.join(out_path, "difflocks_output_strands.npz")
+            npz_preview_path = os.path.join(out_path, "difflocks_output_strands_preview.npz")
             
-            # 5. SAVE
-            yield "status", "💾 5/5: Saving Files..."
-            if progress is not None: progress(0.75, desc="Saving results...")
-            if out_path and strands is not None:
-                positions = strands.cpu().numpy()
-                npz_full_path = os.path.join(out_path, "difflocks_output_strands.npz")
-                npz_preview_path = os.path.join(out_path, "difflocks_output_strands_preview.npz")
+            # Save full version
+            np.savez_compressed(npz_full_path, positions=positions)
+            
+            # Save preview version (optimized for 3D plot)
+            try:
+                # Optimized for 3D preview: 1000 strands and 24 points per strand
+                num_strands = positions.shape[0]
+                points_per_strand = positions.shape[1]
                 
-                # Save full version
-                np.savez_compressed(npz_full_path, positions=positions)
+                # 1. Target exactly ~1000 strands
+                strand_step = max(1, num_strands // 1000)
                 
-                # Save preview version (optimized for 3D plot)
-                try:
-                    # Optimized for 3D preview: 1000 strands and 24 points per strand
-                    num_strands = positions.shape[0]
-                    points_per_strand = positions.shape[1]
-                    
-                    # 1. Target exactly ~1000 strands
-                    strand_step = max(1, num_strands // 1000)
-                    
-                    # 2. Reduce points to 24 per strand
-                    target_points = 24
-                    point_step = max(1, points_per_strand // target_points)
-                    
-                    preview_positions = positions[::strand_step, ::point_step, :]
-                    
-                    np.savez_compressed(npz_preview_path, positions=preview_positions)
-                    yield "log", f"✅ Optimized preview: {preview_positions.shape[0]} strands, {preview_positions.shape[1]} points"
-                except Exception as e:
-                    yield "log", f"⚠️ Error creating optimized preview: {e}"
+                # 2. Reduce points to 24 per strand
+                target_points = 24
+                point_step = max(1, points_per_strand // target_points)
                 
-                # Copy input image
-                cv2.imwrite(os.path.join(out_path, "input_cropped.png"), cv2.cvtColor(cropped_face, cv2.COLOR_RGB2BGR))
+                preview_positions = positions[::strand_step, ::point_step, :]
                 
-            yield "status", "✅ Process completed!"
-            if progress is not None: progress(0.78, desc="Completed")
-            yield "result", strands, None
+                np.savez_compressed(npz_preview_path, positions=preview_positions)
+                yield "log", f"✅ Optimized preview: {preview_positions.shape[0]} strands, {preview_positions.shape[1]} points"
+            except Exception as e:
+                yield "log", f"⚠️ Error creating optimized preview: {e}"
+            
+            # Copy input image
+            cv2.imwrite(os.path.join(out_path, "input_cropped.png"), cv2.cvtColor(cropped_face, cv2.COLOR_RGB2BGR))
+            
+        yield "status", "✅ Process completed!"
+        if progress is not None: progress(0.78, desc="Completed")
+        yield "result", strands, None
 
         except Exception as e:
             traceback.print_exc()
