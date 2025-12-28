@@ -363,95 +363,95 @@ class DiffLocksInference():
             yield "log", "⏳ Loading Strand VAE/Codec..."
             if progress is not None: progress(0.55, desc="Decoding strands...")
             
-        # Move codec to GPU for speed, unless low vram
-        codec_device = "cuda" if torch.cuda.is_available() and not self.low_vram else "cpu"
-        codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).to(codec_device)
-        codec.load_state_dict(torch.load(self.paths['codec'], map_location=codec_device, weights_only=False))
-        codec.eval()
-        
-        # Move normalization dict to appropriate device
-        norm_dict_gpu = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.normalization_dict.items()}
-        
-        # For low vram, we keep mesh data on CPU and use CPU TBN func
-        if self.low_vram:
-            mesh_data_to_use = self.mesh_data_cpu
-            actual_chunks = self.nr_chunks_decode_strands * 2 # Double chunks for smaller peak memory
-        else:
-            mesh_data_to_use = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.scalp_mesh_data.items()}
-            actual_chunks = self.nr_chunks_decode_strands
-        
-        yield "log", f"⏳ Processing {actual_chunks} geometry chunks (Device: {codec_device})..."
-        
-        # Ensure correct device for decoder inputs
-        scalp_texture = scalp_cpu[:,0:-1].to(codec_device).float()
-        density_f32 = density.to(codec_device).float()
+            # Move codec to GPU for speed, unless low vram
+            codec_device = "cuda" if torch.cuda.is_available() and not self.low_vram else "cpu"
+            codec = StrandCodec(do_vae=False, decode_type="dir", nr_verts_per_strand=256).to(codec_device)
+            codec.load_state_dict(torch.load(self.paths['codec'], map_location=codec_device, weights_only=False))
+            codec.eval()
+            
+            # Move normalization dict to appropriate device
+            norm_dict_gpu = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.normalization_dict.items()}
+            
+            # For low vram, we keep mesh data on CPU and use CPU TBN func
+            if self.low_vram:
+                mesh_data_to_use = self.mesh_data_cpu
+                actual_chunks = self.nr_chunks_decode_strands * 2 # Double chunks for smaller peak memory
+            else:
+                mesh_data_to_use = {k: v.to(codec_device) if torch.is_tensor(v) else v for k, v in self.scalp_mesh_data.items()}
+                actual_chunks = self.nr_chunks_decode_strands
+            
+            yield "log", f"⏳ Processing {actual_chunks} geometry chunks (Device: {codec_device})..."
+            
+            # Ensure correct device for decoder inputs
+            scalp_texture = scalp_cpu[:,0:-1].to(codec_device).float()
+            density_f32 = density.to(codec_device).float()
 
-        def decoding_callback(i, total):
-            if progress is not None:
-                # Map decoding chunks (0 to total) to 0.55-0.75 range
-                current_progress = i / total
-                mapped_progress = 0.55 + (0.75 - 0.55) * current_progress
-                progress(mapped_progress, desc=f"Decoding {i}/{total}")
-            if i % 10 == 0:
-                print(f"🧬 Decoding: Chunk {i}/{total}")
-        
-        # Use the native GPU function for speed, but fallback to CPU if VRAM is very low
-        # to avoid OOM during the large texture/mesh mapping operations
-        use_gpu_tbn = torch.cuda.is_available() and not self.low_vram
-        tbn_func = tbn_space_to_world_gpu_native if use_gpu_tbn else tbn_space_to_world_cpu_safe
-        
-        if self.low_vram:
-            yield "log", "⚠️ Low VRAM: Using CPU-safe TBN transformation"
-        
-        # Call the function with the appropriate device-aware function
-        strands, _ = sample_strands_from_scalp_with_density(
-            scalp_texture, density_f32, codec, norm_dict_gpu, 
-            mesh_data_to_use, tbn_func, actual_chunks,
-            callback=decoding_callback)
+            def decoding_callback(i, total):
+                if progress is not None:
+                    # Map decoding chunks (0 to total) to 0.55-0.75 range
+                    current_progress = i / total
+                    mapped_progress = 0.55 + (0.75 - 0.55) * current_progress
+                    progress(mapped_progress, desc=f"Decoding {i}/{total}")
+                if i % 10 == 0:
+                    print(f"🧬 Decoding: Chunk {i}/{total}")
             
-        if strands is None or strands.shape[0] == 0:
-            yield "error", "Decoding failed: no strands generated. Check the density map sum."
-            return
+            # Use the native GPU function for speed, but fallback to CPU if VRAM is very low
+            # to avoid OOM during the large texture/mesh mapping operations
+            use_gpu_tbn = torch.cuda.is_available() and not self.low_vram
+            tbn_func = tbn_space_to_world_gpu_native if use_gpu_tbn else tbn_space_to_world_cpu_safe
+            
+            if self.low_vram:
+                yield "log", "⚠️ Low VRAM: Using CPU-safe TBN transformation"
+            
+            # Call the function with the appropriate device-aware function
+            strands, _ = sample_strands_from_scalp_with_density(
+                scalp_texture, density_f32, codec, norm_dict_gpu, 
+                mesh_data_to_use, tbn_func, actual_chunks,
+                callback=decoding_callback)
+                
+            if strands is None or strands.shape[0] == 0:
+                yield "error", "Decoding failed: no strands generated. Check the density map sum."
+                return
 
-        yield "log", f"✅ 3D Geometry built: {strands.shape[0]} strands generated"
-        
-        # 5. SAVE
-        yield "status", "💾 5/5: Saving Files..."
-        if progress is not None: progress(0.75, desc="Saving results...")
-        if out_path and strands is not None:
-            positions = strands.cpu().numpy()
-            npz_full_path = os.path.join(out_path, "difflocks_output_strands.npz")
-            npz_preview_path = os.path.join(out_path, "difflocks_output_strands_preview.npz")
+            yield "log", f"✅ 3D Geometry built: {strands.shape[0]} strands generated"
             
-            # Save full version
-            np.savez_compressed(npz_full_path, positions=positions)
-            
-            # Save preview version (optimized for 3D plot)
-            try:
-                # Optimized for 3D preview: 1000 strands and 24 points per strand
-                num_strands = positions.shape[0]
-                points_per_strand = positions.shape[1]
+            # 5. SAVE
+            yield "status", "💾 5/5: Saving Files..."
+            if progress is not None: progress(0.75, desc="Saving results...")
+            if out_path and strands is not None:
+                positions = strands.cpu().numpy()
+                npz_full_path = os.path.join(out_path, "difflocks_output_strands.npz")
+                npz_preview_path = os.path.join(out_path, "difflocks_output_strands_preview.npz")
                 
-                # 1. Target exactly ~1000 strands
-                strand_step = max(1, num_strands // 1000)
+                # Save full version
+                np.savez_compressed(npz_full_path, positions=positions)
                 
-                # 2. Reduce points to 24 per strand
-                target_points = 24
-                point_step = max(1, points_per_strand // target_points)
+                # Save preview version (optimized for 3D plot)
+                try:
+                    # Optimized for 3D preview: 1000 strands and 24 points per strand
+                    num_strands = positions.shape[0]
+                    points_per_strand = positions.shape[1]
+                    
+                    # 1. Target exactly ~1000 strands
+                    strand_step = max(1, num_strands // 1000)
+                    
+                    # 2. Reduce points to 24 per strand
+                    target_points = 24
+                    point_step = max(1, points_per_strand // target_points)
+                    
+                    preview_positions = positions[::strand_step, ::point_step, :]
+                    
+                    np.savez_compressed(npz_preview_path, positions=preview_positions)
+                    yield "log", f"✅ Optimized preview: {preview_positions.shape[0]} strands, {preview_positions.shape[1]} points"
+                except Exception as e:
+                    yield "log", f"⚠️ Error creating optimized preview: {e}"
                 
-                preview_positions = positions[::strand_step, ::point_step, :]
+                # Copy input image
+                cv2.imwrite(os.path.join(out_path, "input_cropped.png"), cv2.cvtColor(cropped_face, cv2.COLOR_RGB2BGR))
                 
-                np.savez_compressed(npz_preview_path, positions=preview_positions)
-                yield "log", f"✅ Optimized preview: {preview_positions.shape[0]} strands, {preview_positions.shape[1]} points"
-            except Exception as e:
-                yield "log", f"⚠️ Error creating optimized preview: {e}"
-            
-            # Copy input image
-            cv2.imwrite(os.path.join(out_path, "input_cropped.png"), cv2.cvtColor(cropped_face, cv2.COLOR_RGB2BGR))
-            
-        yield "status", "✅ Process completed!"
-        if progress is not None: progress(0.78, desc="Completed")
-        yield "result", strands, None
+            yield "status", "✅ Process completed!"
+            if progress is not None: progress(0.78, desc="Completed")
+            yield "result", strands, None
 
     except Exception as e:
         traceback.print_exc()
