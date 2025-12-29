@@ -91,30 +91,71 @@ try:
         flat_pos = flat_pos[:, [0, 2, 1]] # Swap Y and Z
         flat_pos[:, 1] *= -1 # Invert Y
 
-    # --- GEOMETRY CREATION (Modern CURVES API for Blender 3.3+) ---
-    print("🔨 Building Geometry (Modern Curves)...", end="", flush=True)
+    # --- GEOMETRY CREATION (Resilient API for Blender 3.3 - 4.2+) ---
+    print("🔨 Building Geometry...", end="", flush=True)
     
-    # Create the curves data
-    curve_data = bpy.data.curves.new(name="DiffLocks_Hair", type='CURVES')
-    hair_obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
-    bpy.context.collection.objects.link(hair_obj)
-    
-    # Efficiently add curves and points
-    # In Blender 4.0+, we use the curves.attributes and point attributes
-    total_points = num_strands * pts_per_strand
-    
-    # Create points and curves in one go
-    curve_data.curves.add(num_strands)
-    curve_data.points.add(num_strands * pts_per_strand)
-    
-    # Set the number of points per curve (uniform in our case)
-    # The attribute is 'points_length' in recent Blender versions
-    if 'points_length' in curve_data.attributes:
-        curve_data.attributes['points_length'].data.foreach_set('value', [pts_per_strand] * num_strands)
-    
-    # Set positions using foreach_set (very fast)
-    curve_data.attributes['position'].data.foreach_set('vector', flat_pos.astype(np.float32).ravel())
-    
+    hair_obj = None
+    curve_data = None
+    is_modern = True
+
+    try:
+        # Try modern Curves API (Blender 3.3 - 4.2+)
+        # Some versions use bpy.data.curves.new(name, 'CURVES')
+        # Others might use bpy.data.hair_curves.new(name)
+        try:
+            curve_data = bpy.data.curves.new(name="DiffLocks_Hair", type='CURVES')
+        except:
+            try:
+                # Blender 4.0+ often uses hair_curves for the new system
+                curve_data = bpy.data.hair_curves.new(name="DiffLocks_Hair")
+            except:
+                # Try positional
+                curve_data = bpy.data.curves.new("DiffLocks_Hair", 'CURVES')
+        
+        hair_obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
+        bpy.context.collection.objects.link(hair_obj)
+        
+        # Efficiently add curves and points
+        total_points = num_strands * pts_per_strand
+        
+        # In modern API, we use .curves.add() and .points.add()
+        # or .geometry.add_curves() in very recent ones
+        if hasattr(curve_data, "geometry") and hasattr(curve_data.geometry, "add_curves"):
+            curve_data.geometry.add_curves([pts_per_strand] * num_strands)
+        else:
+            # Blender 3.3 - 3.6 style
+            curve_data.curves.add(num_strands)
+            curve_data.points.add(num_strands * pts_per_strand)
+            
+            # Set points per curve
+            if 'points_length' in curve_data.attributes:
+                curve_data.attributes['points_length'].data.foreach_set('value', [pts_per_strand] * num_strands)
+        
+        # Set positions
+        if 'position' in curve_data.attributes:
+            curve_data.attributes['position'].data.foreach_set('vector', flat_pos.astype(np.float32).ravel())
+        elif hasattr(curve_data, "geometry") and 'position' in curve_data.geometry.attributes:
+            curve_data.geometry.attributes['position'].data.foreach_set('vector', flat_pos.astype(np.float32).ravel())
+
+    except Exception as e:
+        print(f"\n⚠️ Modern Curves API failed ({e}), falling back to legacy Splines...")
+        is_modern = False
+        # Fallback to legacy CURVE (Splines) - Much slower but compatible
+        curve_data = bpy.data.curves.new("DiffLocks_Hair", type='CURVE')
+        curve_data.dimensions = '3D'
+        hair_obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
+        bpy.context.collection.objects.link(hair_obj)
+        
+        # Legacy creation is slow, we'll do it in chunks
+        for i in range(num_strands):
+            spline = curve_data.splines.new('POLY')
+            spline.points.add(pts_per_strand - 1)
+            strand_pts = flat_pos[i*pts_per_strand : (i+1)*pts_per_strand]
+            # Poly splines use 4D points (x, y, z, w)
+            pts_4d = np.ones((pts_per_strand, 4), dtype=np.float32)
+            pts_4d[:, :3] = strand_pts
+            spline.points.foreach_set('co', pts_4d.ravel())
+
     print(" 100% Done.")
 
     # Activate and select
@@ -141,34 +182,65 @@ try:
     final_obj = hair_obj
     
     # --- ATTRIBUTES (Radius & Colors) ---
-    # Set Radius
-    if radii is not None:
-        r_flat = radii.reshape(-1) * SCALE_FACTOR
-        if 'radius' in final_obj.data.attributes:
-            final_obj.data.attributes['radius'].data.foreach_set('value', r_flat.astype(np.float32))
-    else:
-        total_pts = len(final_obj.data.points)
-        defaults = np.full(total_pts, 0.003 * SCALE_FACTOR, dtype=np.float32)
-        if 'radius' in final_obj.data.attributes:
-            final_obj.data.attributes['radius'].data.foreach_set('value', defaults)
-
-    # Set Colors
-    if colors is not None:
-        try:
-            # For modern CURVES, we use 'FLOAT_COLOR' on 'POINT' or 'CURVE' domain
-            # We'll use POINT domain for per-vertex color
-            if "DiffLocks_Color" not in final_obj.data.attributes:
-                attr = final_obj.data.attributes.new(name="DiffLocks_Color", type='FLOAT_COLOR', domain='POINT')
-            else:
-                attr = final_obj.data.attributes["DiffLocks_Color"]
+    if is_modern:
+        # Set Radius
+        if radii is not None:
+            r_flat = radii.reshape(-1) * SCALE_FACTOR
+            attr_name = 'radius'
+            target_data = None
+            if attr_name in final_obj.data.attributes:
+                target_data = final_obj.data.attributes[attr_name].data
+            elif hasattr(final_obj.data, "geometry") and attr_name in final_obj.data.geometry.attributes:
+                target_data = final_obj.data.geometry.attributes[attr_name].data
             
-            c_flat = colors.reshape(-1, 3)
-            rgba = np.ones((len(c_flat), 4), dtype=np.float32)
-            rgba[:, :3] = c_flat
-            attr.data.foreach_set('color', rgba.ravel())
-            print("🎨 Color attributes applied.")
-        except Exception as e:
-            print(f"⚠️ Could not apply colors: {e}")
+            if target_data:
+                target_data.foreach_set('value', r_flat.astype(np.float32))
+        else:
+            # Default radius
+            attr_name = 'radius'
+            target_data = None
+            if attr_name in final_obj.data.attributes:
+                target_data = final_obj.data.attributes[attr_name].data
+            elif hasattr(final_obj.data, "geometry") and attr_name in final_obj.data.geometry.attributes:
+                target_data = final_obj.data.geometry.attributes[attr_name].data
+            
+            if target_data:
+                total_pts = len(target_data)
+                defaults = np.full(total_pts, 0.003 * SCALE_FACTOR, dtype=np.float32)
+                target_data.foreach_set('value', defaults)
+
+        # Set Colors
+        if colors is not None:
+            try:
+                attr_name = "DiffLocks_Color"
+                # For modern CURVES, we use 'FLOAT_COLOR' on 'POINT' domain
+                if hasattr(final_obj.data, "attributes"):
+                    if attr_name not in final_obj.data.attributes:
+                        attr = final_obj.data.attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
+                    else:
+                        attr = final_obj.data.attributes[attr_name]
+                    attr_data = attr.data
+                elif hasattr(final_obj.data, "geometry") and hasattr(final_obj.data.geometry, "attributes"):
+                    if attr_name not in final_obj.data.geometry.attributes:
+                        attr = final_obj.data.geometry.attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
+                    else:
+                        attr = final_obj.data.geometry.attributes[attr_name]
+                    attr_data = attr.data
+                
+                c_flat = colors.reshape(-1, 3)
+                rgba = np.ones((len(c_flat), 4), dtype=np.float32)
+                rgba[:, :3] = c_flat
+                attr_data.foreach_set('color', rgba.ravel())
+                print("🎨 Color attributes applied.")
+            except Exception as e:
+                print(f"⚠️ Could not apply colors: {e}")
+    else:
+        # Legacy radius (Bevel depth)
+        final_obj.data.bevel_depth = 0.003 * SCALE_FACTOR
+        final_obj.data.bevel_resolution = 0
+        final_obj.data.fill_mode = 'FULL'
+        # Legacy vertex colors are hard to apply to Splines without a mesh conversion
+        print("ℹ️ Legacy mode: Skipping per-vertex colors.")
 
     # MATERIAL
     mat = create_hair_principled_material()

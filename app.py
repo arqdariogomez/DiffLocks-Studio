@@ -1014,17 +1014,15 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
             
         plot_3d_fig = generate_preview_3d(preview_npz if preview_npz.exists() else npz_path, log_capture)
         
-        # SHOW BOTH PREVIEWS TOGETHER (2D and 3D) in Tabs
-        # Also show download group with initial files (.obj and .npz)
+        # 3D plot is ready, but we keep everything hidden until the very end 
+        # as requested by the user to avoid "ghost" elements or empty containers.
         initial_downloads = [str(f) for f in [npz_path] if f.exists()]
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()),
             preview_2d: preview_2d_html,
             plot_3d: plot_3d_fig if plot_3d_fig else gr.update(value=create_empty_3d_plot("⚠️ Could not render 3D")),
-            result_group: gr.update(visible=True),
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: initial_downloads,
-            download_group: gr.update(visible=True)
+            download_file: initial_downloads
         }
         
         tracker.set_phase("obj_export")
@@ -1167,35 +1165,40 @@ footer { display: none !important; }
 .gr-file { 
     color: #ffffff !important; 
     min-height: 150px !important;
-    display: flex !important;
-    flex-direction: column !important;
 }
+
 .gr-file .file-preview { 
     background: #09090b !important; 
     border: 1px solid #6366f1 !important; 
-    flex-grow: 1 !important;
 }
-.gr-file .file-name, .gr-file .file-size, .gr-file .file-type { 
-    color: #ffffff !important; 
-    opacity: 1 !important; 
-    display: block !important;
+
+/* Ensure all text inside gr.File is visible and white */
+.gr-file *, .gr-file span, .gr-file div, .gr-file a {
+    color: #ffffff !important;
+    opacity: 1 !important;
 }
+
 .gr-file a, .gr-file .download { 
     color: #818cf8 !important; 
     text-decoration: underline !important; 
     font-weight: bold !important; 
 }
 
-/* Global Flex Fix for Colab Iframe */
+/* Global Flex Fix for Colab Iframe - Only when visible */
 .gradio-container {
     display: block !important;
 }
 
 .result-group-container, .download-group-container {
-    display: flex !important;
     flex-direction: column !important;
     flex-grow: 1 !important;
     min-height: fit-content !important;
+}
+
+/* Force flex only when Gradio hasn't hidden the element */
+.result-group-container:not([style*="display: none"]), 
+.download-group-container:not([style*="display: none"]) {
+    display: flex !important;
 }
 """
 
