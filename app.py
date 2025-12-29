@@ -848,26 +848,43 @@ def export_blender(npz_path, job_dir, formats, log_capture):
         log_capture.add_log("💡 Please install Blender 4.2+ or place it in the 'blender' folder.")
         return []
     
+    # Platform-aware Blender path check
+    blender_path = cfg.blender_exe
+    if not blender_path.exists():
+        # Fallback for common Colab path
+        alt_path = Path("/content/blender/blender")
+        if alt_path.exists():
+            blender_path = alt_path
+    
+    if not blender_path.exists():
+        log_capture.add_log(f"❌ Blender not found! Checked: {blender_path}")
+        log_capture.add_log("💡 Please install Blender 4.2+ or place it in the 'blender' folder.")
+        return []
+    
     # Ensure blender is executable (Linux)
     if os.name != 'nt':
         try:
-            os.chmod(cfg.blender_exe, 0o755)
+            os.chmod(blender_path, 0o755)
         except: pass
         
     script = cfg.repo_dir / "inference/converter_blender.py"
     output_base = job_dir / "hair"
-    cmd = [str(cfg.blender_exe), "-b", "-P", str(script), "--", str(npz_path), str(output_base)] + keys
+    cmd = [str(blender_path), "-b", "-P", str(script), "--", str(npz_path), str(output_base)] + keys
     log_capture.add_log(f"🟧 Starting Blender export: {keys}")
     try:
         # Use encoding='utf-8' and errors='replace' to avoid UnicodeDecodeError on Windows
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
-        stdout, stderr = process.communicate(timeout=1200) # Increased timeout for heavy Blender exports (20 min)
+        stdout, stderr = process.communicate(timeout=1800) # 30 min timeout
         if stdout:
             for line in stdout.strip().split('\n')[-10:]:
                 if line.strip(): log_capture.add_log(f"[Blender] {line.strip()}")
         if stderr:
-            for line in stderr.strip().split('\n')[-5:]:
-                if line.strip() and "warning" not in line.lower(): log_capture.add_log(f"[Blender ERR] {line.strip()}")
+            for line in stderr.strip().split('\n'):
+                line = line.strip()
+                if not line: continue
+                if any(x in line.lower() for x in ["error", "fail", "exception", "not found"]):
+                    if "warning" not in line.lower():
+                        log_capture.add_log(f"[Blender ERR] {line}")
         outputs = []
         for ext in ['.blend', '.abc', '.usd']:
             path = Path(f"{output_base}{ext}")
@@ -1154,6 +1171,12 @@ footer { display: none !important; }
 .js-plotly-plot, .plotly, .user-select-none {
     background: #18181b !important;
 }
+
+/* Fix for Colab/IFrame ghost text in gr.File */
+.gr-file { color: #e4e4e7 !important; }
+.gr-file .file-preview { background: #18181b !important; border: 1px solid #3f3f46 !important; }
+.gr-file .file-name, .gr-file .file-size { color: #e4e4e7 !important; opacity: 1 !important; }
+.gr-file a { color: #818cf8 !important; text-decoration: underline !important; }
 """
 
 js_func = """
@@ -1319,6 +1342,7 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
         with gr.Column(scale=4):
             with gr.Group():
                 gr.Markdown("### 📥 Step 1: Input Image")
+                # Unified image sources across all platforms
                 image_input = gr.Image(type="filepath", label="Single Image (RGB)", height=400, sources=["upload", "clipboard"])
                 
                 with gr.Accordion("⚙️ Advanced Settings", open=False):

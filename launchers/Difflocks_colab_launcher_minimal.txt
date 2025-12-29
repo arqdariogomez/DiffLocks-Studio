@@ -131,7 +131,7 @@ def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
 def clean_environment():
     """Selective cleanup to avoid binary conflicts without breaking the Colab kernel"""
     if os.path.exists(MARKER_FILE):
-        log("Environment already cleaned.", "info")
+        log("Environment already cleaned. Ready to start.", "success")
         return False
 
     render_status(10, "Starting selective environment cleanup...", "warning")
@@ -390,39 +390,26 @@ if __name__ == "__main__":
             if "public URL:" in line: url = line.split("public URL:")[1].strip()
             elif "Share link:" in line: url = line.split("Share link:")[1].strip()
             elif "gradio.app" in line:
-                # Find the URL in the line using a simple regex-like search
                 import re
                 found = re.search(r'(https?://[^\s]+\.gradio\.app)', line)
                 if found: url = found.group(1)
             
             if url:
-                # Remove any trailing escape codes or spaces
                 url = url.split(" ")[0].strip()
-            
-            render_status(100, "🚀 STUDIO READY", "success")
-            
-            # Clear output for a clean inline experience like Kaggle
-            from IPython.display import clear_output, IFrame
-            clear_output(wait=True)
-            
-            display(HTML(f'''
-                <div style="background: #18181b; border: 2px solid #34d399; border-radius: 12px; padding: 20px; margin-top: 20px; font-family: sans-serif;">
-                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
-                        <span style="font-size: 32px;">✅</span>
-                        <span style="font-size: 24px; font-weight: 700; color: #34d399;">DiffLocks Studio Online!</span>
+                render_status(100, "🚀 STUDIO READY", "success")
+                
+                # Clear everything and only show the IFrame
+                from IPython.display import clear_output, IFrame, HTML, display
+                clear_output(wait=True)
+                
+                # Show only a small elegant header and the IFrame
+                display(HTML(f'''
+                    <div style="background: #18181b; border-bottom: 2px solid #6366f1; padding: 10px 20px; font-family: sans-serif; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: #fafafa; font-weight: 700; font-size: 16px;">🚀 DiffLocks Studio Online</span>
+                        <a href="{url}" target="_blank" style="color: #818cf8; text-decoration: none; font-size: 12px; font-weight: 600;">Open in new tab ↗️</a>
                     </div>
-                    <div style="background: #27272a; padding: 15px; border-radius: 8px; border: 1px solid #3f3f46;">
-                        <p style="color: #a1a1aa; margin: 0 0 10px 0; font-size: 14px;">Access via this URL (or use the frame below):</p>
-                        <a href="{url}" target="_blank" style="color: #818cf8; font-size: 18px; font-weight: 600; text-decoration: none; word-break: break-all;">{url}</a>
-                    </div>
-                    <p style="color: #71717a; font-size: 12px; margin-top: 15px;">⚠️ Keep this cell running while using the app.</p>
-                </div>
-            '''))
-            
-            try:
+                '''))
                 display(IFrame(src=url, width="100%", height=1000))
-            except Exception as e:
-                log(f"IFrame display failed: {e}", "info")
                 
         if "Error" in line or "Exception" in line:
             log(f"Error detected: {line_clean}", "err")
