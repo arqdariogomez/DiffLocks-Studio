@@ -30,7 +30,7 @@ REPO_URL = "https://github.com/arqdariogomez/DiffLocks-Studio.git"
 REPO_DIR = "/content/DiffLocks-Studio"
 DRIVE_PATH = "/content/drive/MyDrive/DiffLocks"
 CHECKPOINTS_SUBDIR = "checkpoints"
-MARKER_FILE = "/content/.clean_done"
+MARKER_FILE = "/content/.difflocks_ready_v1" # New marker for auto-restart test
 HF_WHEELS_REPO = "arqdariogomez/difflocks-env"
 WHEELS_DIR = "/content/wheels"
 
@@ -131,10 +131,21 @@ def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
 def clean_environment():
     """Selective cleanup to avoid binary conflicts without breaking the Colab kernel"""
     if os.path.exists(MARKER_FILE):
-        log("Environment already cleaned. Ready to start.", "success")
+        log("✅ Environment already optimized. Kernel is fresh.", "success")
         return False
 
-    render_status(10, "Starting selective environment cleanup...", "warning")
+    render_status(10, "First-run: Optimizing environment...", "warning")
+    log("DEBUG: Marker not found. Starting deep cleaning and dependency alignment.", "info")
+    
+    # 1. REMOVE CONFLICTING LIBS FROM MEMORY (FORCE)
+    import gc
+    for m in list(sys.modules.keys()):
+        if any(x in m for x in ["natten", "gradio", "numpy", "torch", "PIL"]):
+            del sys.modules[m]
+    gc.collect()
+
+    # 2. DEEP CLEAN BINARIES
+    render_status(20, "Removing binary residues...", "warning")
     
     bad_pkgs = [
         "numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", 
@@ -446,6 +457,17 @@ try:
         os.makedirs(local_cp, exist_ok=True)
 
     # 4. Installation & Patches
+    restarted = clean_environment()
+    if restarted:
+        # Create the marker and KILL the kernel to force a clean reload
+        with open(MARKER_FILE, "w") as f: f.write("ready")
+        log("🔥 CRITICAL: Kernel must restart to load new binary extensions.", "warning")
+        log("🔥 AUTO-RESTARTING IN 3 SECONDS... (Wait for 'Session Crashed' message and click Play again)", "warning")
+        time.sleep(3)
+        import os
+        os.kill(os.getpid(), 9)
+        return
+
     install_dependencies()
     install_blender()
     
