@@ -129,14 +129,27 @@ def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
     return process.returncode
 
 def clean_environment():
-    """Light cleanup to ensure paths are ready without killing the kernel"""
+    """Deep cleanup to maximize disk space in Colab"""
     if os.path.exists(MARKER_FILE):
         return False
     
-    render_status(10, "Optimizing environment for one-click start...", "warning")
-    # Clean only critical binary paths
+    render_status(10, "Optimizing disk space and environment...", "warning")
+    
+    # 1. Remove Colab sample data (frees ~100MB)
+    if os.path.exists("/content/sample_data"):
+        shutil.rmtree("/content/sample_data", ignore_errors=True)
+        
+    # 2. Clean apt cache
+    subprocess.run("apt-get clean && rm -rf /var/lib/apt/lists/*", shell=True)
+    
+    # 3. Clean only critical binary paths
     for path in ["/usr/local/lib/python3.10/dist-packages/numpy"]:
         if os.path.exists(path): shutil.rmtree(path, ignore_errors=True)
+    
+    # 4. Clear HF cache if it exists from previous failed runs
+    hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+    if hf_cache.exists():
+        shutil.rmtree(hf_cache, ignore_errors=True)
     
     # Mark as ready
     with open(MARKER_FILE, "w") as f: f.write("ready")
@@ -219,6 +232,7 @@ def install_dependencies():
             repo_id=HF_WHEELS_REPO,
             repo_type="dataset",
             local_dir=WHEELS_DIR,
+            local_dir_use_symlinks=False,
             allow_patterns=["wheels/*.whl"]
         )
         if any(Path(WHEELS_DIR).glob("wheels/*.whl")):

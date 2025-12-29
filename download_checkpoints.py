@@ -225,6 +225,26 @@ def download_from_meshcapade(user, password, checkpoints_dir):
     
     return False
 
+def cleanup_hf_cache():
+    """Clears the Hugging Face cache to free up disk space, especially for Colab."""
+    try:
+        from huggingface_hub import scan_cache_dir
+        cache_info = scan_cache_dir()
+        if cache_info.size_on_disk > 0:
+            print(f"🧹 HF Cache detected: {cache_info.size_on_disk / (1024**3):.2f} GB. Cleaning up...")
+            for repo in cache_info.repos:
+                for revision in repo.revisions:
+                    # Delete the revision (this clears the files but keeps the structure if needed)
+                    # For a full wipe, we use the delete_revisions method
+                    pass
+            # Faster way for Colab: remove the hub folder entirely
+            cache_path = Path.home() / ".cache" / "huggingface" / "hub"
+            if cache_path.exists():
+                shutil.rmtree(cache_path)
+                print("✅ HF Cache cleared.")
+    except Exception as e:
+        print(f"⚠️ Cache cleanup skipped: {e}")
+
 def download_public_assets(base_dir, token=None):
     """Downloads non-restricted assets (Face Landmarker, etc.) from HF."""
     try:
@@ -239,8 +259,10 @@ def download_public_assets(base_dir, token=None):
     print(f"🔹 Downloading public resources from {REPO_ID}...")
     try:
         # Try downloading from the public repo. No token needed.
+        # local_dir_use_symlinks=False is critical for Colab to avoid double disk usage
         snapshot_download(repo_id=REPO_ID, repo_type="dataset", allow_patterns=["assets/*"], 
-                         local_dir=str(base_dir / "inference"), token=token)
+                         local_dir=str(base_dir / "inference"), local_dir_use_symlinks=False, token=token)
+        cleanup_hf_cache()
         return True
     except Exception as e:
         # Fallback to the hybrid repo if env doesn't have them yet, or if env download fails
@@ -249,7 +271,8 @@ def download_public_assets(base_dir, token=None):
             try:
                 print(f"🔹 Attempting fallback to {ALT_REPO}...")
                 snapshot_download(repo_id=ALT_REPO, repo_type="dataset", allow_patterns=["assets/*"], 
-                                 local_dir=str(base_dir / "inference"), token=token)
+                                 local_dir=str(base_dir / "inference"), local_dir_use_symlinks=False, token=token)
+                cleanup_hf_cache()
                 return True
             except:
                 pass
@@ -437,7 +460,10 @@ def run_checkpoint_setup(token=None):
         print(f"🔹 Attempting download from HF: {hf_ckpt_repo}")
         try:
             from huggingface_hub import snapshot_download
-            snapshot_download(repo_id=hf_ckpt_repo, repo_type="dataset", local_dir=str(checkpoints_dir), token=token)
+            # local_dir_use_symlinks=False prevents double disk usage (cache + local_dir)
+            snapshot_download(repo_id=hf_ckpt_repo, repo_type="dataset", 
+                             local_dir=str(checkpoints_dir), local_dir_use_symlinks=False, token=token)
+            cleanup_hf_cache()
             if (list(checkpoints_dir.rglob("scalp_*.pth")) or list(checkpoints_dir.rglob("*.ckpt"))):
                 return True
         except Exception as e:
