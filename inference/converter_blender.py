@@ -91,145 +91,84 @@ try:
         flat_pos = flat_pos[:, [0, 2, 1]] # Swap Y and Z
         flat_pos[:, 1] *= -1 # Invert Y
 
-    points_4d = np.empty((num_strands * pts_per_strand, 4), dtype=np.float32)
-    points_4d[:, :3] = flat_pos
-    points_4d[:, 3] = 1.0
-
-    # --- GEOMETRY CREATION (Using Addon Logic: Legacy then Convert) ---
-    print("🔨 Building Geometry...", end="", flush=True)
-    curve_data = bpy.data.curves.new(name="DiffLocks_Temp", type='CURVE')
-    curve_data.dimensions = '3D'
+    # --- GEOMETRY CREATION (Modern CURVES API for Blender 3.3+) ---
+    print("🔨 Building Geometry (Modern Curves)...", end="", flush=True)
     
-    # Batch creation of splines
-    report_interval = max(1, num_strands // 5)
-    for i in range(num_strands):
-        s = curve_data.splines.new('POLY')
-        s.points.add(pts_per_strand - 1)
-        start = i * pts_per_strand
-        end = start + pts_per_strand
-        s.points.foreach_set('co', points_4d[start:end].ravel())
-        
-        if i > 0 and i % report_interval == 0:
-            print(f" {int((i/num_strands)*100)}%...", end="", flush=True)
+    # Create the curves data
+    curve_data = bpy.data.curves.new(name="DiffLocks_Hair", type='CURVES')
+    hair_obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
+    bpy.context.collection.objects.link(hair_obj)
+    
+    # Efficiently add curves and points
+    # In Blender 4.0+, we use the curves.attributes and point attributes
+    total_points = num_strands * pts_per_strand
+    
+    # Create points and curves in one go
+    curve_data.curves.add(num_strands)
+    curve_data.points.add(num_strands * pts_per_strand)
+    
+    # Set the number of points per curve (uniform in our case)
+    # The attribute is 'points_length' in recent Blender versions
+    if 'points_length' in curve_data.attributes:
+        curve_data.attributes['points_length'].data.foreach_set('value', [pts_per_strand] * num_strands)
+    
+    # Set positions using foreach_set (very fast)
+    curve_data.attributes['position'].data.foreach_set('vector', flat_pos.astype(np.float32).ravel())
+    
     print(" 100% Done.")
 
-    temp_obj = bpy.data.objects.new("DiffLocks_Temp", curve_data)
-    bpy.context.collection.objects.link(temp_obj)
-    
     # Activate and select
-    bpy.context.view_layer.objects.active = temp_obj
+    bpy.context.view_layer.objects.active = hair_obj
     for obj in bpy.data.objects:
         obj.select_set(False)
-    temp_obj.select_set(True)
+    hair_obj.select_set(True)
     
-    # --- ABC EXPORT (from Legacy Curve) ---
+    # --- ABC EXPORT ---
     if 'abc' in requested_formats:
-        # Use forward slashes for Alembic exporter on Windows
         abc_out = os.path.abspath(f"{output_base}.abc").replace("\\", "/")
-        print(f"📦 Exporting Alembic (Legacy Strands): {abc_out}")
-        
+        print(f"📦 Exporting Alembic: {abc_out}")
         try:
-            # Method 1: Export as Hair (Particles/Curves)
-            # In Blender 4.0, export_hair=True is the most likely to work for curves
             bpy.ops.wm.alembic_export(
                 filepath=abc_out, 
                 selected=True, 
                 start=1, end=1,
                 export_hair=True, 
-                export_particles=False,
-                as_background_job=False,
                 evaluation_mode='VIEWPORT'
             )
-            
-            # Method 2: Fallback if file is empty - try as regular object
-            if not os.path.exists(abc_out) or os.path.getsize(abc_out) < 5000:
-                print("🔄 ABC Method 1 failed, trying Method 2 (Regular Object)...")
-                bpy.ops.wm.alembic_export(
-                    filepath=abc_out, 
-                    selected=True, 
-                    start=1, end=1,
-                    export_hair=False,
-                    as_background_job=False
-                )
-                
-            # Method 3: Final fallback - convert to Mesh (edges) temporarily
-            if not os.path.exists(abc_out) or os.path.getsize(abc_out) < 5000:
-                print("🔄 ABC Method 2 failed, trying Method 3 (Mesh Edges)...")
-                # We do this on a copy to not break the original curve
-                mesh_copy = temp_obj.copy()
-                mesh_copy.data = temp_obj.data.copy()
-                bpy.context.collection.objects.link(mesh_copy)
-                
-                # Deselect all, select copy
-                for obj in bpy.data.objects: obj.select_set(False)
-                mesh_copy.select_set(True)
-                bpy.context.view_layer.objects.active = mesh_copy
-                
-                # Convert to mesh (turns curves into edges)
-                bpy.ops.object.convert(target='MESH')
-                
-                bpy.ops.wm.alembic_export(
-                    filepath=abc_out, 
-                    selected=True, 
-                    start=1, end=1,
-                    as_background_job=False
-                )
-                
-                # Clean up
-                bpy.data.objects.remove(mesh_copy, do_unlink=True)
-                
-                # Restore selection to original
-                temp_obj.select_set(True)
-                bpy.context.view_layer.objects.active = temp_obj
-                
         except Exception as e:
             print(f"⚠️ ABC Export error: {e}")
 
-    final_obj = temp_obj
-    use_new_curves = False
+    final_obj = hair_obj
+    
+    # --- ATTRIBUTES (Radius & Colors) ---
+    # Set Radius
+    if radii is not None:
+        r_flat = radii.reshape(-1) * SCALE_FACTOR
+        if 'radius' in final_obj.data.attributes:
+            final_obj.data.attributes['radius'].data.foreach_set('value', r_flat.astype(np.float32))
+    else:
+        total_pts = len(final_obj.data.points)
+        defaults = np.full(total_pts, 0.003 * SCALE_FACTOR, dtype=np.float32)
+        if 'radius' in final_obj.data.attributes:
+            final_obj.data.attributes['radius'].data.foreach_set('value', defaults)
 
-    # CONVERT TO MODERN HAIR CURVES (for .blend and .usd)
-    print("✨ Converting to Modern Hair Curves...", end="", flush=True)
-    try:
-        # This is the step that makes it Geometry Nodes compatible and faster for Cycles
-        bpy.ops.object.convert(target='CURVES', keep_original=False)
-        final_obj = bpy.context.active_object
-        final_obj.name = "DiffLocks_Hair"
-        use_new_curves = True
-        print(" Done.")
-        
-        # --- ATTRIBUTES (Radius & Colors) ---
-        # Set Radius
-        if radii is not None:
-            r_flat = radii.reshape(-1) * SCALE_FACTOR
-            if 'radius' in final_obj.data.attributes:
-                final_obj.data.attributes['radius'].data.foreach_set('value', r_flat.astype(np.float32))
-        else:
-            total_pts = len(final_obj.data.points)
-            defaults = np.full(total_pts, 0.003 * SCALE_FACTOR, dtype=np.float32)
-            if 'radius' in final_obj.data.attributes:
-                final_obj.data.attributes['radius'].data.foreach_set('value', defaults)
-
-        # Set Colors
-        if colors is not None:
-            try:
-                if "DiffLocks_Color" not in final_obj.data.attributes:
-                    attr = final_obj.data.attributes.new(name="DiffLocks_Color", type='FLOAT_COLOR', domain='POINT')
-                else:
-                    attr = final_obj.data.attributes["DiffLocks_Color"]
-                
-                c_flat = colors.reshape(-1, 3)
-                rgba = np.ones((len(c_flat), 4), dtype=np.float32)
-                rgba[:, :3] = c_flat
-                attr.data.foreach_set('color', rgba.ravel())
-                print("🎨 Color attributes applied.")
-            except Exception as e:
-                print(f"⚠️ Could not apply colors: {e}")
-
-    except Exception as e:
-        print(f"\n⚠️ Modern conversion failed: {e}. Staying with legacy curves.")
-        final_obj.data.fill_mode = 'FULL'
-        final_obj.data.bevel_depth = 0.001
+    # Set Colors
+    if colors is not None:
+        try:
+            # For modern CURVES, we use 'FLOAT_COLOR' on 'POINT' or 'CURVE' domain
+            # We'll use POINT domain for per-vertex color
+            if "DiffLocks_Color" not in final_obj.data.attributes:
+                attr = final_obj.data.attributes.new(name="DiffLocks_Color", type='FLOAT_COLOR', domain='POINT')
+            else:
+                attr = final_obj.data.attributes["DiffLocks_Color"]
+            
+            c_flat = colors.reshape(-1, 3)
+            rgba = np.ones((len(c_flat), 4), dtype=np.float32)
+            rgba[:, :3] = c_flat
+            attr.data.foreach_set('color', rgba.ravel())
+            print("🎨 Color attributes applied.")
+        except Exception as e:
+            print(f"⚠️ Could not apply colors: {e}")
 
     # MATERIAL
     mat = create_hair_principled_material()
@@ -243,31 +182,54 @@ try:
     dg.update()
     
     # EXPORT REMAINING FORMATS
+    created_any = False
+    
     if 'blend' in requested_formats:
         out = f"{output_base}.blend"
-        bpy.ops.wm.save_as_mainfile(filepath=out, compress=True)
-        print(f"✅ Exported: {out}")
+        try:
+            bpy.ops.wm.save_as_mainfile(filepath=out, compress=True)
+            if os.path.exists(out) and os.path.getsize(out) > 1024:
+                print(f"✅ Exported: {out} ({os.path.getsize(out)/1024/1024:.1f} MB)")
+                created_any = True
+            else:
+                print(f"❌ Failed to create valid .blend file: {out}")
+        except Exception as e:
+            print(f"❌ Blender .blend export error: {e}")
     
     if 'abc' in requested_formats:
         out = f"{output_base}.abc"
-        if os.path.exists(out) and os.path.getsize(out) > 5000:
-            print(f"✅ Exported ABC: {out}")
-        else:
-            print(f"❌ ABC Export failed (size: {os.path.getsize(out) if os.path.exists(out) else 0})")
+        # Selection for ABC
+        final_obj.select_set(True)
+        bpy.context.view_layer.objects.active = final_obj
+        try:
+            bpy.ops.wm.alembic_export(filepath=out, selected=True, visible_objects_only=False, flatten=True)
+            if os.path.exists(out) and os.path.getsize(out) > 1024:
+                print(f"✅ Exported: {out} ({os.path.getsize(out)/1024/1024:.1f} MB)")
+                created_any = True
+            else:
+                print(f"❌ ABC Export failed or zero size: {out}")
+        except Exception as e:
+            print(f"❌ Blender ABC export error: {e}")
 
     if 'usd' in requested_formats:
         out = f"{output_base}.usd"
-        print(f"📦 Exporting USD: {out}")
         try:
-            # USD handles the new CURVES type better than ABC
             bpy.ops.wm.usd_export(
                 filepath=out, 
                 selected_objects_only=True,
                 export_hair=True, 
                 evaluation_mode='VIEWPORT'
             )
-        except: pass
-        print(f"✅ Exported USD: {out}")
+            if os.path.exists(out) and os.path.getsize(out) > 1024:
+                print(f"✅ Exported: {out} ({os.path.getsize(out)/1024/1024:.1f} MB)")
+                created_any = True
+            else:
+                print(f"❌ USD Export failed or zero size: {out}")
+        except Exception as e:
+            print(f"❌ Blender USD export error: {e}")
+            
+    if not created_any:
+        print("⚠️ No Blender files were created. This usually happens if Blender crashes or out of memory.")
         
     print(f"✅ SUCCESS (Total time: {time.time() - t_start:.2f}s)")
 

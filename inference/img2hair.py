@@ -309,30 +309,22 @@ class DiffLocksInference():
             
             def p_callback(info):
                 i = info['i']
-                # SYNC PROGRESS: Map the 100 diffusion steps to the 0.08-0.55 range of the global UI (from app.py PHASES)
                 total = self.nr_iters_denoise
-                if progress is not None:
-                    # i goes from 0 to total-1
-                    # Range: 0.08 (start of phase 3) to 0.55 (end of phase 3)
-                    current_progress = i / total
-                    mapped_progress = 0.08 + (0.55 - 0.08) * current_progress
-                    progress(mapped_progress, desc=f"Diffusion {i}/{total}")
-                
-                # Yield logs to app.py every 10 steps
-                if i % 10 == 0:
-                    print(f"🔄 Diffusion: Step {i}/{total} (sigma={info['sigma']:.4f})")
-            
-            # Sampling (No autocast to match reference)
-            # Use yielding version for progress updates
+                # Sync with custom UI instead of calling Gradio progress
+                current_progress = i / total
+                # Yield progress value (0.0 to 1.0) for the current phase
+                # We'll use a local trick to yield from a callback if possible, 
+                # but since we can't yield from a nested function easily, 
+                # we'll just print for now and the main loop will yield.
+                if i % 5 == 0:
+                    print(f"🔄 Diffusion: Step {i}/{total}")
+
+            # Sampling
             scalp = None
-            last_log_step = -1
             for x_step, i, sigma in sample_images_cfg_yield(1, actual_cfg, [-1., 10000.], model, conf['model'], self.nr_iters_denoise, extra, callback=p_callback):
                 scalp = x_step
-                
-                # Manually yield to the generator every 10 steps to update UI
-                if i % 10 == 0 and i != last_log_step:
-                    yield "log", f"🔄 Diffusion Step {i}/{self.nr_iters_denoise}..."
-                    last_log_step = i
+                # Update UI every step for smoothness
+                yield "phase_progress", i / self.nr_iters_denoise
             
             # NaN Check
             if torch.isnan(scalp).any():
@@ -387,12 +379,7 @@ class DiffLocksInference():
             density_f32 = density.to(codec_device).float()
 
             def decoding_callback(i, total):
-                if progress is not None:
-                    # Map decoding chunks (0 to total) to 0.55-0.75 range
-                    current_progress = i / total
-                    mapped_progress = 0.55 + (0.75 - 0.55) * current_progress
-                    progress(mapped_progress, desc=f"Decoding {i}/{total}")
-                if i % 10 == 0:
+                if i % 5 == 0:
                     print(f"🧬 Decoding: Chunk {i}/{total}")
             
             # Use the native GPU function for speed, but fallback to CPU if VRAM is very low
@@ -403,11 +390,19 @@ class DiffLocksInference():
             if self.low_vram:
                 yield "log", "⚠️ Low VRAM: Using CPU-safe TBN transformation"
             
-            # Call the function with the appropriate device-aware function
-            strands, _ = sample_strands_from_scalp_with_density(
-                scalp_texture, density_f32, codec, norm_dict_gpu, 
-                mesh_data_to_use, tbn_func, actual_chunks,
-                callback=decoding_callback)
+            # Use a wrapper to yield progress from the generator
+            def sample_with_yield():
+                # We can't easily yield from inside sample_strands...
+                # So we'll just let it run and the callback will print to log
+                return sample_strands_from_scalp_with_density(
+                    scalp_texture, density_f32, codec, norm_dict_gpu, 
+                    mesh_data_to_use, tbn_func, actual_chunks,
+                    callback=decoding_callback)
+            
+            # For decoding, we'll yield a fixed status and let it work
+            # Since it's hard to get granular yield from the current implementation
+            # without modifying the core function.
+            strands, _ = sample_with_yield()
                 
             if strands is None or strands.shape[0] == 0:
                 yield "error", "Decoding failed: no strands generated. Check the density map sum."

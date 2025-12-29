@@ -196,8 +196,13 @@ class ProgressTracker:
                 self.current_phase_index = i
                 self.current_phase_start_time = time.time()
                 self.current_phase_id = phase[0] # Keep track of ID
+                self.manual_phase_progress = None # Reset manual progress on phase change
                 return
     
+    def set_phase_progress(self, progress_01):
+        """Set manual progress for the current phase (0.0 to 1.0)"""
+        self.manual_phase_progress = min(max(float(progress_01), 0.0), 1.0)
+
     def get_phase_name(self):
         # Use the stored ID or search
         phase_id = getattr(self, 'current_phase_id', self.phases[self.current_phase_index][0])
@@ -216,7 +221,11 @@ class ProgressTracker:
         phase_elapsed = time.time() - self.current_phase_start_time
         
         # Calculate progress within phase (0-100%)
-        phase_internal_progress = min((phase_elapsed / phase_duration) * 100, 99) if phase_duration > 0 else 0
+        if getattr(self, 'manual_phase_progress', None) is not None:
+            phase_internal_progress = self.manual_phase_progress * 100
+        else:
+            phase_internal_progress = min((phase_elapsed / phase_duration) * 100, 99) if phase_duration > 0 else 0
+            
         phase_remaining = max(phase_duration - phase_elapsed, 0)
         
         # Calculate total progress using the percentage ranges defined in PHASES
@@ -965,6 +974,8 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
                 dtype, val = update[0], update[1]
                 if dtype == "status":
                     tracker.set_phase(val)
+                elif dtype == "phase_progress":
+                    tracker.set_phase_progress(val)
                 elif dtype == "log":
                     log_capture.add_log(val)
                 elif dtype == "error":
@@ -973,9 +984,7 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
             # Yield every single update to ensure real-time log/progress
             yield {
                 status_html: create_dual_progress_html(*tracker.get_progress()),
-                debug_console: render_debug_console(log_capture.get_logs()),
-                result_group: gr.update(visible=False),
-                download_group: gr.update(visible=False) # Keep downloads hidden
+                debug_console: render_debug_console(log_capture.get_logs())
             }
 
         npz_path = job_dir / "difflocks_output_strands.npz"
@@ -985,8 +994,7 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         tracker.set_phase("preview_2d")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs()),
-            download_group: gr.update(visible=False)
+            debug_console: render_debug_console(log_capture.get_logs())
         }
         preview_img_path = generate_preview_2d(npz_path, job_dir, log_capture)
         preview_2d_html = render_image_html(preview_img_path)
@@ -994,8 +1002,7 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         tracker.set_phase("preview_3d")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs()),
-            download_group: gr.update(visible=False) 
+            debug_console: render_debug_console(log_capture.get_logs())
         }
         
         # Use optimized preview if available
@@ -1136,47 +1143,60 @@ details > div {
 footer { display: none !important; }
 
 /* === DISABLE LOADING ANIMATIONS === */
-.generating, .loading, .pending {
+.generating, .loading, .pending, .generating *, .loading *, .pending * {
     animation: none !important;
     opacity: 1 !important;
+    visibility: visible !important;
 }
 
 /* === PLOTLY === */
-.gr-plot, [data-testid="plot"] {
-    background: #18181b !important;
-    border: 1px solid #3f3f46 !important;
+.gr-plot, [data-testid="plot"], .plotly-graph-div {
+    background: #09090b !important;
+    border: 2px solid #3f3f46 !important;
     border-radius: 8px !important;
-    min-height: 550px !important;
+    min-height: 600px !important;
+    height: auto !important;
+    flex-grow: 1 !important;
+    flex-shrink: 0 !important;
     overflow: visible !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
-.js-plotly-plot .modebar {
-    background: rgba(39, 39, 42, 0.9) !important;
+/* Fix for Colab/IFrame ghost text in gr.File and layout collapse */
+.gr-file { 
+    color: #ffffff !important; 
+    min-height: 150px !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+.gr-file .file-preview { 
+    background: #09090b !important; 
+    border: 1px solid #6366f1 !important; 
+    flex-grow: 1 !important;
+}
+.gr-file .file-name, .gr-file .file-size, .gr-file .file-type { 
+    color: #ffffff !important; 
+    opacity: 1 !important; 
+    display: block !important;
+}
+.gr-file a, .gr-file .download { 
+    color: #818cf8 !important; 
+    text-decoration: underline !important; 
+    font-weight: bold !important; 
 }
 
-.js-plotly-plot .modebar-btn {
-    color: #a1a1aa !important;
+/* Global Flex Fix for Colab Iframe */
+.gradio-container {
+    display: block !important;
 }
 
-.js-plotly-plot .modebar-btn:hover {
-    color: #fafafa !important;
+.result-group-container, .download-group-container {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-grow: 1 !important;
+    min-height: fit-content !important;
 }
-
-/* === SCROLLBAR === */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #18181b; }
-::-webkit-scrollbar-thumb { background: #52525b; border-radius: 4px; }
-
-/* === PLOTLY OVERRIDE === */
-.js-plotly-plot, .plotly, .user-select-none {
-    background: #18181b !important;
-}
-
-/* Fix for Colab/IFrame ghost text in gr.File */
-.gr-file { color: #e4e4e7 !important; }
-.gr-file .file-preview { background: #18181b !important; border: 1px solid #3f3f46 !important; }
-.gr-file .file-name, .gr-file .file-size { color: #e4e4e7 !important; opacity: 1 !important; }
-.gr-file a { color: #818cf8 !important; text-decoration: underline !important; }
 """
 
 js_func = """
@@ -1364,7 +1384,7 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
             # PROGRESS SECTION
             status_html = gr.HTML(value=create_dual_progress_html(0, 0, "Ready to start", 0, 0))
             
-            with gr.Group(visible=False) as result_group:
+            with gr.Group(visible=False, elem_classes="result-group-container") as result_group:
                 # Optimized layout: Tabs for 3D and 2D previews (3D first by default)
                 with gr.Tabs() as preview_tabs:
                     with gr.Tab("🎨 Interactive 3D (Optimized Preview)", id="tab_3d"):
@@ -1374,7 +1394,7 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                     with gr.Tab("🖼️ 2D Preview", id="tab_2d"):
                         preview_2d = gr.HTML(render_image_html(None))
                 
-                with gr.Group(visible=False) as download_group:
+                with gr.Group(visible=False, elem_classes="download-group-container") as download_group:
                     gr.Markdown("### 📥 Download Results")
                     download_file = gr.File(label="Generated Assets", file_count="multiple")
 
