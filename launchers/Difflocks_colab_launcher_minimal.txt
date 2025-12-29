@@ -129,58 +129,18 @@ def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
     return process.returncode
 
 def clean_environment():
-    """Selective cleanup to avoid binary conflicts without breaking the Colab kernel"""
+    """Light cleanup to ensure paths are ready without killing the kernel"""
     if os.path.exists(MARKER_FILE):
-        log("✅ Environment already optimized. Kernel is fresh.", "success")
         return False
-
-    render_status(10, "First-run: Optimizing environment...", "warning")
-    log("DEBUG: Marker not found. Starting deep cleaning and dependency alignment.", "info")
     
-    # 1. REMOVE CONFLICTING LIBS FROM MEMORY (FORCE)
-    import gc
-    for m in list(sys.modules.keys()):
-        if any(x in m for x in ["natten", "gradio", "numpy", "torch", "PIL"]):
-            del sys.modules[m]
-    gc.collect()
-
-    # 2. DEEP CLEAN BINARIES
-    render_status(20, "Removing binary residues...", "warning")
+    render_status(10, "Optimizing environment for one-click start...", "warning")
+    # Clean only critical binary paths
+    for path in ["/usr/local/lib/python3.10/dist-packages/numpy"]:
+        if os.path.exists(path): shutil.rmtree(path, ignore_errors=True)
     
-    bad_pkgs = [
-        "numpy", "numpy.libs", "scipy", "scipy.libs", "pandas", "pandas.libs", 
-        "matplotlib", "matplotlib.libs", "gradio", "PIL", "cv2", "skimage", "natten",
-        "pydantic", "pydantic_core"
-    ]
-    
-    user_site = site.getusersitepackages()
-    if user_site:
-        s_path = Path(user_site)
-        if s_path.exists():
-            for pkg in bad_pkgs:
-                pkg_path = s_path / pkg
-                if pkg_path.exists():
-                    shutil.rmtree(pkg_path, ignore_errors=True)
-                for dist in s_path.glob(f"{pkg}*"):
-                    if dist.is_dir(): shutil.rmtree(dist, ignore_errors=True)
-                    else: dist.unlink(missing_ok=True)
-    
-    for tmp in ["/root/.cache/pip", "/root/.cache/matplotlib"]:
-        if os.path.exists(tmp): shutil.rmtree(tmp, ignore_errors=True)
-
-    with open(MARKER_FILE, "w") as f: f.write("done")
-    
-    msg = """
-    <div style="background: #27272a; border: 2px solid #fbbf24; border-radius: 8px; padding: 20px; font-family: sans-serif;">
-        <h3 style="color: #fbbf24; margin-top: 0;">🔄 Kernel Restart Required</h3>
-        <p style="color: #e4e4e7;">The environment has been cleaned to avoid library conflicts. <b>Colab will now restart the session.</b></p>
-        <p style="color: #a1a1aa; font-size: 14px;">After the restart (5-10 seconds), please <b>Run this cell again</b> to continue with the installation.</p>
-    </div>
-    """
-    clear_output()
-    display(HTML(msg))
-    time.sleep(5)
-    os._exit(0)
+    # Mark as ready
+    with open(MARKER_FILE, "w") as f: f.write("ready")
+    return True
 
 def install_blender():
     """Installs Blender 4.2.5 for advanced exports and its dependencies"""
@@ -325,77 +285,37 @@ def apply_device_fixes():
         with open(util_path, 'w') as f: f.write(content)
 
 def run_studio():
-    """Launches the application in an isolated process"""
-    render_status(90, "Starting DiffLocks Studio...", "success")
+    """Lauch the studio in a subprocess to avoid kernel import conflicts (True One-Click)"""
+    render_status(90, "Launching Studio in isolated process...", "running")
+    log("🚀 Starting isolated subprocess (One-Click mode)...", "info")
     
-    runner_script = os.path.join(REPO_DIR, "colab_runner.py")
-    with open(runner_script, "w") as f:
-        f.write("""
-import os
-import matplotlib
-matplotlib.use('Agg', force=True)
-import sys
-import time
-
-os.chdir('""" + REPO_DIR + """')
-sys.path.append(os.getcwd())
-
-from app import main
-
-if __name__ == "__main__":
-    import gradio as gr
-    from gradio.blocks import Blocks
-    original_launch = Blocks.launch
-    def launch_with_share(*args, **kwargs):
-        kwargs['share'] = True
-        kwargs['server_name'] = '0.0.0.0'
-        kwargs['show_error'] = True
-        kwargs['inline'] = True
-        return original_launch(*args, **kwargs)
-    Blocks.launch = launch_with_share
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env["GRADIO_ANALYTICS_ENABLED"] = "False"
     
-    # Ensure stdout is unbuffered
-    import functools
-    print = functools.partial(print, flush=True)
-    
-    main()
-""")
-
-    # Use python -u for unbuffered output
+    # Launch app.py as a separate OS process
+    # This is the key: it gets a fresh Python environment while the cell stays running
     process = subprocess.Popen(
-        [sys.executable, "-u", runner_script],
-        cwd=REPO_DIR,
+        [sys.executable, "-u", "app.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-        universal_newlines=True
+        env=env,
+        cwd=REPO_DIR
     )
-
-    log("Searching for Gradio URL...", "info")
-    log_path = "/content/studio_output.log"
     
-    # Clear previous log
-    if os.path.exists(log_path): os.remove(log_path)
-
-    # Use a non-blocking way to read output
+    log("📡 Process started. Waiting for Gradio URL...", "info")
+    
+    # Monitor output for the URL
     while True:
         line = process.stdout.readline()
-        if not line and process.poll() is not None:
-            break
-        if not line:
-            time.sleep(0.1)
-            continue
-            
-        # Write to log file for persistence
-        with open(log_path, "a") as f:
-            f.write(line)
+        if not line: break
         
-        # Log interesting lines to the console
-        line_clean = line.strip()
-        if any(x in line_clean.lower() for x in ["public url", "share link", "error", "exception", "failed", "loading", "gradio.app", "running on"]):
-            log(f"[Studio] {line_clean}", "info")
-
+        # Stream logs to the hidden log list for debugging
+        install_log_lines.append(f"[STUDIO] {line.strip()}")
+        
+        # Check for the URL
         if any(x in line for x in ["public URL:", "Share link:", "gradio.app"]):
             url = None
             if "public URL:" in line: url = line.split("public URL:")[1].strip()
@@ -409,11 +329,10 @@ if __name__ == "__main__":
                 url = url.split(" ")[0].strip()
                 render_status(100, "🚀 STUDIO READY", "success")
                 
-                # Clear everything and only show the IFrame
+                # UI: Clear everything and show only the IFrame
                 from IPython.display import clear_output, IFrame, HTML, display
                 clear_output(wait=True)
                 
-                # Show only a small elegant header and the IFrame
                 display(HTML(f'''
                     <div style="background: #18181b; border-bottom: 2px solid #6366f1; padding: 10px 20px; font-family: sans-serif; display: flex; justify-content: space-between; align-items: center;">
                         <span style="color: #fafafa; font-weight: 700; font-size: 16px;">🚀 DiffLocks Studio Online</span>
@@ -423,7 +342,12 @@ if __name__ == "__main__":
                 display(IFrame(src=url, width="100%", height=1000))
                 
         if "Error" in line or "Exception" in line:
-            log(f"Error detected: {line_clean}", "err")
+            log(f"⚠️ {line.strip()}", "info")
+
+    # If we get here, the process died
+    ret = process.wait()
+    log(f"❌ Studio process exited with code {ret}", "err")
+    render_status(100, f"Process exited ({ret})", "error")
 
 # --- MAIN FLOW ---
 try:
@@ -457,17 +381,7 @@ try:
         os.makedirs(local_cp, exist_ok=True)
 
     # 4. Installation & Patches
-    restarted = clean_environment()
-    if restarted:
-        # Create the marker and KILL the kernel to force a clean reload
-        with open(MARKER_FILE, "w") as f: f.write("ready")
-        log("🔥 CRITICAL: Kernel must restart to load new binary extensions.", "warning")
-        log("🔥 AUTO-RESTARTING IN 3 SECONDS... (Wait for 'Session Crashed' message and click Play again)", "warning")
-        time.sleep(3)
-        import os
-        os.kill(os.getpid(), 9)
-        return
-
+    clean_environment()
     install_dependencies()
     install_blender()
     
