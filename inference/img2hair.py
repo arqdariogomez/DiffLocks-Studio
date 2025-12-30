@@ -211,19 +211,17 @@ class DiffLocksInference():
 
     # NOW A GENERATOR (YIELD)
     @torch.inference_mode()
-    def rgb2hair(self, rgb_img, out_path=None, cfg_val=None, progress=None):
+    def rgb2hair(self, rgb_img, out_path=None, cfg_val=None):
         if out_path: os.makedirs(out_path, exist_ok=True)
         actual_cfg = cfg_val if cfg_val is not None else self.cfg_val
         
-        if progress is not None: progress(0, desc="Initializing...")
         # INITIAL LOG
         vram_status = f"VRAM: {self.vram_gb:.1f}GB" + (" (Low VRAM Mode 🚀)" if self.low_vram else " (Optimal)")
         yield "log", f"⚙️ Configuration: CFG={actual_cfg} | Steps={self.nr_iters_denoise} | {vram_status}"
 
         try:
             # 1. GEOMETRY
-            yield "status", "👤 1/5: Detecting Face and Geometry..."
-            if progress is not None: progress(0.05, desc="Detecting Face...")
+            yield "status", "👤 1/5: Detecting Face..."
             frame = (rgb_img.permute(0,2,3,1).squeeze(0)*255).byte().cpu().numpy()
             _, lms = self.mediapipe_img.run(frame)
             if not lms: 
@@ -240,8 +238,7 @@ class DiffLocksInference():
             yield "log", f"✅ Face detected (Pre-processing on {preprocess_device})"
             
             # 2. DINO
-            yield "status", "🦖 2/5: Extracting Features (DINOv2)..."
-            if progress is not None: progress(0.1, desc="Extracting DINO features...")
+            yield "status", "🦖 2/5: Extracting Features..."
             
             # Load DINOv2 model with caching - Force CPU if low vram
             from inference.load_dinov2 import load_dinov2
@@ -264,7 +261,7 @@ class DiffLocksInference():
             yield "log", "✅ Embeddings successfully generated (float32)"
             
             # 3. DIFFUSION
-            yield "status", "🌫️ 3/5: Diffusion (Generating Hair)..."
+            yield "status", "🌫️ 3/5: Synthesizing hair (AI)..."
             yield "log", "⏳ Loading diffusion model to GPU..."
             conf = K.config.load_config(self.paths['config'])
             
@@ -351,9 +348,8 @@ class DiffLocksInference():
             yield "log", f"✅ Neural texture generated (density sum: {density.sum():.1f})"
             
             # 4. DECODING
-            yield "status", "🧬 4/5: Decoding in 3D (GPU)..."
+            yield "status", "🧬 4/5: Constructing geometry (3D)..."
             yield "log", "⏳ Loading Strand VAE/Codec..."
-            if progress is not None: progress(0.55, desc="Decoding strands...")
             
             # Move codec to GPU for speed, unless low vram
             codec_device = "cuda" if torch.cuda.is_available() and not self.low_vram else "cpu"
@@ -381,7 +377,7 @@ class DiffLocksInference():
             def decoding_callback(i, total):
                 if i % 5 == 0:
                     print(f"🧬 Decoding: Chunk {i}/{total}")
-            
+
             # Use the native GPU function for speed, but fallback to CPU if VRAM is very low
             # to avoid OOM during the large texture/mesh mapping operations
             use_gpu_tbn = torch.cuda.is_available() and not self.low_vram
@@ -398,7 +394,7 @@ class DiffLocksInference():
                     scalp_texture, density_f32, codec, norm_dict_gpu, 
                     mesh_data_to_use, tbn_func, actual_chunks,
                     callback=decoding_callback)
-            
+
             # For decoding, we'll yield a fixed status and let it work
             # Since it's hard to get granular yield from the current implementation
             # without modifying the core function.
@@ -411,8 +407,7 @@ class DiffLocksInference():
             yield "log", f"✅ 3D Geometry built: {strands.shape[0]} strands generated"
             
             # 5. SAVE
-            yield "status", "💾 5/5: Saving Files..."
-            if progress is not None: progress(0.75, desc="Saving results...")
+            yield "status", "💾 5/5: Exporting assets..."
             if out_path and strands is not None:
                 positions = strands.cpu().numpy()
                 npz_full_path = os.path.join(out_path, "difflocks_output_strands.npz")
@@ -445,7 +440,6 @@ class DiffLocksInference():
                 cv2.imwrite(os.path.join(out_path, "input_cropped.png"), cv2.cvtColor(cropped_face, cv2.COLOR_RGB2BGR))
                 
             yield "status", "✅ Process completed!"
-            if progress is not None: progress(0.78, desc="Completed")
             yield "result", strands, None
         except Exception as e:
             traceback.print_exc()
@@ -453,9 +447,9 @@ class DiffLocksInference():
         finally:
             force_cleanup()
 
-    def file2hair(self, fpath, out, cfg_val=None, progress=None):
+    def file2hair(self, fpath, out, cfg_val=None):
         img = cv2.imread(fpath)
         if img is None: raise FileNotFoundError(f"{fpath}")
         rgb = torch.tensor(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).to("cuda" if torch.cuda.is_available() else "cpu").permute(2,0,1).unsqueeze(0).float()/255.
         # Propagate the generator
-        yield from self.rgb2hair(rgb, out, cfg_val=cfg_val, progress=progress)
+        yield from self.rgb2hair(rgb, out, cfg_val=cfg_val)

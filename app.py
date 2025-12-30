@@ -28,6 +28,11 @@ from html import escape
 import gradio as gr
 import numpy as np
 import torch
+try:
+    import plotly.graph_objects as go
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
 from pathlib import Path
 
 from blender_installer import download_blender
@@ -89,11 +94,11 @@ DECODING_TIME = 120 # GPU decoding is fast
 
 PHASES = [
     ("init", "🚀 Initializing", 5, 0.00, 0.01),
-    ("1/5", "📸 Preprocessing image", 10, 0.01, 0.03),
-    ("2/5", "🔍 Extracting features", 20, 0.03, 0.08),
-    ("3/5", "✨ Running diffusion", DIFFUSION_TIME, 0.08, 0.55),
-    ("4/5", "🧶 Decoding strands", DECODING_TIME, 0.55, 0.75),
-    ("5/5", "🏁 Finalizing inference", 5, 0.75, 0.78),
+    ("1/5", "👤 Detecting Face", 10, 0.01, 0.03),
+    ("2/5", "🦖 Extracting Features", 20, 0.03, 0.08),
+    ("3/5", "🌫️ Synthesizing hair (AI)", DIFFUSION_TIME, 0.08, 0.55),
+    ("4/5", "🧬 Constructing geometry (3D)", DECODING_TIME, 0.55, 0.75),
+    ("5/5", "💾 Exporting assets", 5, 0.75, 0.78),
     ("preview_2d", "🎨 Creating 2D preview", 10, 0.78, 0.82),
     ("preview_3d", "🎨 Creating Interactive 3D", 15, 0.82, 0.88),
     ("obj_export", "📦 Exporting OBJ", 30, 0.88, 0.94),
@@ -366,6 +371,17 @@ def create_complete_html():
                 </div>
             </div>
         </div>
+        <script>
+            // Force layout recalculation for Gradio components
+            setTimeout(() => {{
+                window.dispatchEvent(new Event('resize'));
+                const resultGroup = document.querySelector('.result-group-container');
+                const downloadGroup = document.querySelector('.download-group-container');
+                if (resultGroup) {{ resultGroup.style.display = 'flex'; resultGroup.style.opacity = '1'; }}
+                if (downloadGroup) {{ downloadGroup.style.display = 'flex'; downloadGroup.style.opacity = '1'; }}
+                console.log("✨ Layout forced via JS");
+            }}, 500);
+        </script>
     </div>
     '''
 
@@ -659,27 +675,30 @@ def generate_preview_2d(npz_path, output_dir, log_capture=None):
         return None
 
 def generate_preview_3d(npz_path, log_capture=None):
+    if not HAS_PLOTLY:
+        if log_capture: log_capture.add_log("⚠️ Plotly not found. 3D Preview disabled.")
+        return None
+        
     try:
-        import plotly.graph_objects as go
         if not Path(npz_path).exists():
             if log_capture: log_capture.add_log(f"⚠️ 3D Preview: File not found at {npz_path}")
-            return None
+            return create_empty_3d_plot("⚠️ Result file not found")
             
         if log_capture: log_capture.add_log(f"🎨 Interactive 3D: Loading {Path(npz_path).name}...")
         data = np.load(npz_path)
         if 'positions' not in data:
             if log_capture: log_capture.add_log(f"⚠️ 3D Preview: 'positions' not in NPZ")
-            return None
+            return create_empty_3d_plot("⚠️ Invalid data format")
             
         positions = data['positions']
         if len(positions.shape) != 3:
             if log_capture: log_capture.add_log(f"⚠️ 3D Preview: Invalid shape {positions.shape}")
-            return None
+            return create_empty_3d_plot("⚠️ Data shape mismatch")
             
         num_strands, points_per_strand, _ = positions.shape
         if num_strands == 0:
             if log_capture: log_capture.add_log("⚠️ 3D Preview: No strands found in data")
-            return None
+            return create_empty_3d_plot("⚠️ No hair strands detected")
 
         if log_capture: log_capture.add_log(f"🎨 Interactive 3D: Loaded {num_strands} strands, {points_per_strand} points")
         
@@ -688,7 +707,6 @@ def generate_preview_3d(npz_path, log_capture=None):
         strand_step = max(1, num_strands // target_strands)
         
         # Downsampling points per strand to 24 for better performance/look
-        # Original is usually 32 points
         target_points = 24
         point_step = max(1, points_per_strand // target_points)
         
@@ -698,7 +716,7 @@ def generate_preview_3d(npz_path, log_capture=None):
         if log_capture:
             log_capture.add_log(f"🎨 Interactive 3D: Rendering {n_s} strands with {n_p} points each")
         
-        # Rotation and axis adjustment (matching Kaggle workflow)
+        # Rotation and axis adjustment
         x_base = subset[:, :, 0]
         y_base = -subset[:, :, 2]
         z_base = subset[:, :, 1]
@@ -709,99 +727,91 @@ def generate_preview_3d(npz_path, log_capture=None):
         fy = -x_base * s + y_base * c
         fz = z_base
         
-        # Color calculation (Gradient from root to tip)
+        # Color calculation
         t = np.linspace(0, 1, n_p)
         
-        # ULTRA group_size for maximum speed
-        # With 1000 strands, grouping by 250 means only 4 objects total
         traces = []
-        group_size = 250
+        group_size = 300
         for i in range(0, n_s, group_size):
             end_idx = min(i + group_size, n_s)
-            
             g_fx = fx[i:end_idx]
             g_fy = fy[i:end_idx]
             g_fz = fz[i:end_idx]
-            
             gn_s = g_fx.shape[0]
+            
+            # NaN trick
             nan_col = np.full((gn_s, 1), np.nan)
+            gx_plot = np.hstack([g_fx, nan_col]).flatten()
+            gy_plot = np.hstack([g_fy, nan_col]).flatten()
+            gz_plot = np.hstack([g_fz, nan_col]).flatten()
             
-            gx_plot = np.hstack([g_fx, nan_col]).flatten().tolist()
-            gy_plot = np.hstack([g_fy, nan_col]).flatten().tolist()
-            gz_plot = np.hstack([g_fz, nan_col]).flatten().tolist()
-            
-            # Use 't' as color index for each point + 0 for the NaN
             g_color_idx = np.tile(np.append(t, 0), gn_s)
             
             traces.append(go.Scatter3d(
                 x=gx_plot, y=gy_plot, z=gz_plot,
                 mode='lines',
                 line=dict(
-                    width=2.2, # Slightly thicker as requested
-                    color=g_color_idx.tolist(),
+                    width=2.5,
+                    color=g_color_idx,
                     colorscale=[
-                        [0.0, 'rgb(51, 51, 51)'],       # Root: Dark grey (Solid)
-                        [0.5, 'rgb(255, 255, 255)'],    # Center: Bright white (Solid)
-                        [1.0, 'rgb(30, 30, 35)']        # Tips: Very dark grey (To blend with background #18181b)
+                        [0.0, 'rgb(30, 30, 30)'],    # Root
+                        [0.5, 'rgb(180, 160, 140)'], # Mid
+                        [1.0, 'rgb(20, 20, 25)']     # Tips
                     ],
                 ),
                 hoverinfo='none',
                 showlegend=False
             ))
         
-        # 2. NO REFERENCE MARKERS (Removed red dot as requested)
-        
+        if not traces:
+            return create_empty_3d_plot("⚠️ No data to display")
+
         fig = go.Figure(data=traces)
-        
         fig.update_layout(
             template="plotly_dark",
-            paper_bgcolor='#18181b',
-            plot_bgcolor='#18181b',
             scene=dict(
-                xaxis=dict(visible=False), # Hide grids as requested
-                yaxis=dict(visible=False),
-                zaxis=dict(visible=False),
-                bgcolor='#18181b',
-                dragmode='turntable', 
-                camera=dict(
-                    eye=dict(x=1.2, y=1.2, z=0.8),
-                    center=dict(x=0, y=0, z=0),
-                    up=dict(x=0, y=0, z=1)
-                ),
+                xaxis=dict(visible=False, showgrid=False, showbackground=False),
+                yaxis=dict(visible=False, showgrid=False, showbackground=False),
+                zaxis=dict(visible=False, showgrid=False, showbackground=False),
                 aspectmode='data'
             ),
             margin=dict(l=0, r=0, b=0, t=0),
-                height=600,
-                showlegend=False,
-                modebar=dict(
-                    bgcolor='rgba(0,0,0,0)',
-                    color='#a1a1aa',
-                    activecolor='#ffffff'
-                ),
-                uirevision=True,
-                scene_camera_projection_type='perspective'
-            )
-        
-        if log_capture:
-            log_capture.add_log(f"✅ Hybrid 3D: Plot created with {len(traces)} groups")
+            height=550,
+            showlegend=False
+        )
         return fig
     except Exception as e:
         if log_capture: 
             log_capture.add_log(f"❌ Error in Interactive 3D: {str(e)}")
             import traceback
             log_capture.add_log(traceback.format_exc())
-        return None
+        return create_empty_3d_plot(f"⚠️ 3D Error: {str(e)[:50]}...")
 
 def create_empty_3d_plot(message="🎨 Interactive 3D preview will appear here after generation"):
-    fig = go.Figure()
+    if not HAS_PLOTLY:
+        try:
+            import matplotlib.pyplot as plt
+            fig = plt.figure(figsize=(8, 6), facecolor='#18181b')
+            ax = fig.add_subplot(111, projection='3d')
+            ax.set_facecolor('#18181b')
+            ax.text(0.5, 0.5, 0.5, message, color='#a1a1aa', ha='center', va='center')
+            ax.axis('off')
+            return fig
+        except:
+            return None
+    
+    # Create a figure with a dummy invisible trace to ensure it's valid
+    fig = go.Figure(data=[go.Scatter3d(x=[0], y=[0], z=[0], mode='markers', marker=dict(size=0, opacity=0), showlegend=False)])
+    
     fig.update_layout(
+        template="plotly_dark",
         paper_bgcolor='#18181b',
         plot_bgcolor='#18181b',
         scene=dict(
             bgcolor='#18181b',
-            xaxis=dict(visible=False, showgrid=False, showbackground=False),
-            yaxis=dict(visible=False, showgrid=False, showbackground=False),
-            zaxis=dict(visible=False, showgrid=False, showbackground=False),
+            xaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
+            yaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
+            zaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
         ),
         margin=dict(l=0, r=0, b=0, t=0),
         height=550,
@@ -811,7 +821,7 @@ def create_empty_3d_plot(message="🎨 Interactive 3D preview will appear here a
             xref="paper", yref="paper",
             x=0.5, y=0.5,
             showarrow=False,
-            font=dict(size=14, color="#a1a1aa")
+            font=dict(size=16, color="#a1a1aa")
         )]
     )
     return fig
@@ -919,7 +929,7 @@ def force_sync_github():
     except Exception as e:
         return f"❌ Sync failed: {e}"
 
-def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()):
+def run_inference_logic(image, cfg_scale, export_formats):
     log_capture = VerboseLogCapture()
     log_capture.start()
     tracker = ProgressTracker(is_cpu=IS_CPU)
@@ -969,7 +979,7 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         plot_3d_fig = None
         
         # Generator approach for real-time updates
-        for update in model.file2hair(str(img_path), str(job_dir), cfg_val=float(cfg_scale), progress=progress):
+        for update in model.file2hair(str(img_path), str(job_dir), cfg_val=float(cfg_scale)):
             if isinstance(update, tuple):
                 dtype, val = update[0], update[1]
                 if dtype == "status":
@@ -1065,10 +1075,9 @@ def run_inference_logic(image, cfg_scale, export_formats, progress=gr.Progress()
         for f in final_downloads:
             log_capture.add_log(f"  - {Path(f).name}")
         
-        # Final result yield
         yield {
-            plot_3d: gr.update(value=plot_3d_fig if plot_3d_fig else create_empty_3d_plot("⚠️ Preview not available")),
-            preview_2d: preview_2d_html if 'preview_2d_html' in locals() else gr.update(),
+            plot_3d: gr.update(value=plot_3d_fig if plot_3d_fig else create_empty_3d_plot("⚠️ Preview not available"), visible=True),
+            preview_2d: gr.update(value=preview_2d_html if 'preview_2d_html' in locals() else gr.update(), visible=True),
             status_html: final_status,
             result_group: gr.update(visible=True),
             download_file: final_downloads,
@@ -1189,16 +1198,35 @@ footer { display: none !important; }
     display: block !important;
 }
 
-.result-group-container, .download-group-container {
-    flex-direction: column !important;
-    flex-grow: 1 !important;
-    min-height: fit-content !important;
+/* 
+   Robust Visibility Fix:
+   We want these containers to be flex when Gradio makes them visible.
+   Gradio usually sets 'display: block' or removes 'display: none'.
+*/
+.result-group-container, 
+.download-group-container {
+    min-height: 450px !important;
 }
 
-/* Force flex only when Gradio hasn't hidden the element */
-.result-group-container:not([style*="display: none"]), 
-.download-group-container:not([style*="display: none"]) {
+/* 
+   Apply flex only if the element is NOT explicitly hidden by Gradio.
+   We use a high-specificity selector to ensure our flex doesn't break hidden state.
+*/
+div.result-group-container:not([style*="display:none"]):not([style*="display: none"]),
+div.download-group-container:not([style*="display:none"]):not([style*="display: none"]) {
     display: flex !important;
+    flex-direction: column !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+/* Ensure children also expand */
+div.result-group-container > div, 
+div.download-group-container > div {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex-grow: 1 !important;
 }
 """
 
@@ -1397,9 +1425,9 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
                     with gr.Tab("🖼️ 2D Preview", id="tab_2d"):
                         preview_2d = gr.HTML(render_image_html(None))
                 
-                with gr.Group(visible=False, elem_classes="download-group-container") as download_group:
-                    gr.Markdown("### 📥 Download Results")
-                    download_file = gr.File(label="Generated Assets", file_count="multiple")
+            with gr.Group(visible=False, elem_classes="download-group-container") as download_group:
+                gr.Markdown("### 📥 Download Results")
+                download_file = gr.File(label="Generated Assets", file_count="multiple")
 
             with gr.Accordion("📜 Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))

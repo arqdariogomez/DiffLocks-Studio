@@ -26,7 +26,15 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 SCALE_FACTOR = 1.0
 ROTATE_X_90 = True # Fix Y-Up to Z-Up
 
-def create_hair_principled_material(name="DiffLocks_Mat"):
+def purge_orphans():
+    """Liberar memoria de bloques de datos no utilizados en Blender y forzar GC de Python"""
+    import gc
+    # Eliminar bloques de datos huérfanos (mallas, curvas, materiales que no se usan)
+    for i in range(2): # A veces requiere un par de pasadas para limpiar dependencias
+        bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+    gc.collect()
+
+def create_hair_principled_material(name="DiffLocks_Mat", colors=None):
     mat = bpy.data.materials.new(name=name)
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -36,38 +44,40 @@ def create_hair_principled_material(name="DiffLocks_Mat"):
     # Try to use Principled Hair BSDF (available in modern Blender)
     try:
         shader = nodes.new(type='ShaderNodeBsdfHairPrincipled')
-        shader.location = (0, 0)
-        # Default to a nice brown
-        # Melanin: 0.8, Redness: 0.1
+        shader.location = (300, 300)
+        # Default to a nice brown (Melanin: 0.65, Redness: 0.5)
         if "Melanin" in shader.inputs:
-            shader.inputs["Melanin"].default_value = 0.8
+            shader.inputs["Melanin"].default_value = 0.65
+        if "Redness" in shader.inputs:
+            shader.inputs["Redness"].default_value = 0.5
     except:
         # Fallback to standard Principled BSDF
         shader = nodes.new(type='ShaderNodeBsdfPrincipled')
-        shader.location = (0, 0)
+        shader.location = (300, 300)
         if "Base Color" in shader.inputs:
             shader.inputs["Base Color"].default_value = (0.05, 0.03, 0.01, 1.0)
 
     # Check for color attribute
-    try:
-        attr_node = nodes.new(type='ShaderNodeAttribute')
-        attr_node.attribute_name = "DiffLocks_Color"
-        attr_node.location = (-300, 0)
-        
-        # Connect to color input
-        target_input = None
-        for inp in shader.inputs:
-            if "color" in inp.name.lower() and "random" not in inp.name.lower():
-                target_input = inp
-                break
-        
-        if target_input:
-            links.new(attr_node.outputs["Color"], target_input)
-    except:
-        pass
+    if colors is not None:
+        try:
+            attr_node = nodes.new(type='ShaderNodeAttribute')
+            attr_node.attribute_name = "DiffLocks_Color"
+            attr_node.location = (0, 400)
+            
+            # Connect to color input
+            target_input = None
+            for inp in shader.inputs:
+                if "color" in inp.name.lower() and "random" not in inp.name.lower():
+                    target_input = inp
+                    break
+            
+            if target_input:
+                links.new(attr_node.outputs["Color"], target_input)
+        except:
+            pass
 
     out = nodes.new(type='ShaderNodeOutputMaterial')
-    out.location = (300, 0)
+    out.location = (600, 300)
     links.new(shader.outputs[0], out.inputs[0])
     return mat
 
@@ -80,6 +90,11 @@ try:
     colors = data.get('colors', None)
     radii = data.get('radii', None)
     
+    # Liberar el objeto data de npz
+    del data
+    import gc
+    gc.collect()
+    
     num_strands = int(positions.shape[0])
     pts_per_strand = int(positions.shape[1])
     
@@ -91,170 +106,180 @@ try:
         flat_pos = flat_pos[:, [0, 2, 1]] # Swap Y and Z
         flat_pos[:, 1] *= -1 # Invert Y
 
-    # --- GEOMETRY CREATION (Resilient API for Blender 3.3 - 4.2+) ---
-    print("🔨 Building Geometry...", end="", flush=True)
-    
-    hair_obj = None
-    curve_data = None
-    is_modern = True
+    # Liberar memoria de positions ya que tenemos flat_pos
+    del positions
+    import gc
+    gc.collect()
 
+    # --- GEOMETRY CREATION (Addon-style: Legacy -> Convert) ---
+    print("🔨 Building Geometry: ", end="", flush=True)
+    
+    # 1. Create legacy curve
     try:
-        # Try modern Curves API (Blender 3.3 - 4.2+)
-        # Some versions use bpy.data.curves.new(name, 'CURVES')
-        # Others might use bpy.data.hair_curves.new(name)
-        try:
-            curve_data = bpy.data.curves.new(name="DiffLocks_Hair", type='CURVES')
-        except:
-            try:
-                # Blender 4.0+ often uses hair_curves for the new system
-                curve_data = bpy.data.hair_curves.new(name="DiffLocks_Hair")
-            except:
-                # Try positional
-                curve_data = bpy.data.curves.new("DiffLocks_Hair", 'CURVES')
-        
-        hair_obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
-        bpy.context.collection.objects.link(hair_obj)
-        
-        # Efficiently add curves and points
-        total_points = num_strands * pts_per_strand
-        
-        # In modern API, we use .curves.add() and .points.add()
-        # or .geometry.add_curves() in very recent ones
-        if hasattr(curve_data, "geometry") and hasattr(curve_data.geometry, "add_curves"):
-            curve_data.geometry.add_curves([pts_per_strand] * num_strands)
-        else:
-            # Blender 3.3 - 3.6 style
-            curve_data.curves.add(num_strands)
-            curve_data.points.add(num_strands * pts_per_strand)
-            
-            # Set points per curve
-            if 'points_length' in curve_data.attributes:
-                curve_data.attributes['points_length'].data.foreach_set('value', [pts_per_strand] * num_strands)
-        
-        # Set positions
-        if 'position' in curve_data.attributes:
-            curve_data.attributes['position'].data.foreach_set('vector', flat_pos.astype(np.float32).ravel())
-        elif hasattr(curve_data, "geometry") and 'position' in curve_data.geometry.attributes:
-            curve_data.geometry.attributes['position'].data.foreach_set('vector', flat_pos.astype(np.float32).ravel())
-
-    except Exception as e:
-        print(f"\n⚠️ Modern Curves API failed ({e}), falling back to legacy Splines...")
-        is_modern = False
-        # Fallback to legacy CURVE (Splines) - Much slower but compatible
-        curve_data = bpy.data.curves.new("DiffLocks_Hair", type='CURVE')
-        curve_data.dimensions = '3D'
-        hair_obj = bpy.data.objects.new("DiffLocks_Hair", curve_data)
-        bpy.context.collection.objects.link(hair_obj)
-        
-        # Legacy creation is slow, we'll do it in chunks
-        for i in range(num_strands):
-            spline = curve_data.splines.new('POLY')
-            spline.points.add(pts_per_strand - 1)
-            strand_pts = flat_pos[i*pts_per_strand : (i+1)*pts_per_strand]
-            # Poly splines use 4D points (x, y, z, w)
-            pts_4d = np.ones((pts_per_strand, 4), dtype=np.float32)
-            pts_4d[:, :3] = strand_pts
-            spline.points.foreach_set('co', pts_4d.ravel())
-
-    print(" 100% Done.")
-
-    # Activate and select
-    bpy.context.view_layer.objects.active = hair_obj
-    for obj in bpy.data.objects:
-        obj.select_set(False)
-    hair_obj.select_set(True)
+        curve_data = bpy.data.curves.new("DiffLocks_Temp", type='CURVE')
+    except:
+        curve_data = bpy.data.curves.new("DiffLocks_Temp", 'CURVE')
     
-    # --- ABC EXPORT ---
+    curve_data.dimensions = '3D'
+    
+    # 2. Add splines
+    # Prepare 4D points for foreach_set
+    points_4d = np.empty((num_strands * pts_per_strand, 4), dtype=np.float32)
+    points_4d[:, :3] = flat_pos.astype(np.float32)
+    points_4d[:, 3] = 1.0
+    
+    report_interval = max(1, num_strands // 10)
+    for i in range(num_strands):
+        s = curve_data.splines.new('POLY')
+        s.points.add(pts_per_strand - 1)
+        start = i * pts_per_strand
+        end = start + pts_per_strand
+        s.points.foreach_set('co', points_4d[start:end].ravel())
+        
+        if i > 0 and i % report_interval == 0:
+            print(f"{int((i/num_strands)*100)}%...", end=" ", flush=True)
+    
+    print("100% Done.")
+    
+    # Liberar memoria de arrays de numpy que ya no necesitamos
+    del points_4d
+    del flat_pos
+    import gc
+    gc.collect()
+
+    # 3. Create Object
+    temp_obj = bpy.data.objects.new("DiffLocks_Temp", curve_data)
+    bpy.context.collection.objects.link(temp_obj)
+    
+    # Deselect all and select temp_obj
+    bpy.ops.object.select_all(action='DESELECT')
+    temp_obj.select_set(True)
+    bpy.context.view_layer.objects.active = temp_obj
+    
+    # --- ABC EXPORT (BEFORE CONVERSION) ---
+    # Exportamos ABC usando la curva legacy con bevel para asegurar volumen y compatibilidad
     if 'abc' in requested_formats:
-        abc_out = os.path.abspath(f"{output_base}.abc").replace("\\", "/")
-        print(f"📦 Exporting Alembic: {abc_out}")
+        out_abc = f"{output_base}.abc"
         try:
+            print(f"📦 Exporting Alembic (.abc) from Legacy Curve...")
+            # Temporalmente damos volumen para la exportación
+            temp_obj.data.bevel_depth = 0.001 * SCALE_FACTOR
+            temp_obj.data.bevel_resolution = 0
+            temp_obj.data.fill_mode = 'FULL'
+            
             bpy.ops.wm.alembic_export(
-                filepath=abc_out, 
-                selected=True, 
-                start=1, end=1,
-                export_hair=True, 
-                evaluation_mode='VIEWPORT'
+                filepath=out_abc,
+                selected=True,
+                flatten=True,
+                as_background_job=False,
+                export_hair=True,
+                export_particles=True
             )
+            
+            if os.path.exists(out_abc) and os.path.getsize(out_abc) > 10000:
+                print(f"✅ Exported ABC: {out_abc} ({os.path.getsize(out_abc)/1024/1024:.1f} MB)")
+                created_any = True
+            
+            # Quitamos el bevel para que la conversión a Hair Curves sea limpia
+            temp_obj.data.bevel_depth = 0
+            
+            # Limpieza post-ABC
+            purge_orphans()
         except Exception as e:
-            print(f"⚠️ ABC Export error: {e}")
+            print(f"❌ ABC export error: {e}")
 
-    final_obj = hair_obj
+    final_obj = temp_obj
     
-    # --- ATTRIBUTES (Radius & Colors) ---
-    if is_modern:
+    print("✨ Converting to Modern Hair Curves for .blend and .usd...", end=" ", flush=True)
+    try:
+        # This is the magic part from the addon
+        bpy.ops.object.convert(target='CURVES', keep_original=False)
+        final_obj = bpy.context.active_object
+        final_obj.name = "DiffLocks_Hair"
+        print("Done.")
+        
+        # --- ATTRIBUTES (Radius & Colors) ---
         # Set Radius
         if radii is not None:
             r_flat = radii.reshape(-1) * SCALE_FACTOR
-            attr_name = 'radius'
-            target_data = None
-            if attr_name in final_obj.data.attributes:
-                target_data = final_obj.data.attributes[attr_name].data
-            elif hasattr(final_obj.data, "geometry") and attr_name in final_obj.data.geometry.attributes:
-                target_data = final_obj.data.geometry.attributes[attr_name].data
-            
-            if target_data:
-                target_data.foreach_set('value', r_flat.astype(np.float32))
+            if 'radius' in final_obj.data.attributes:
+                final_obj.data.attributes['radius'].data.foreach_set('value', r_flat.astype(np.float32))
         else:
             # Default radius
-            attr_name = 'radius'
-            target_data = None
-            if attr_name in final_obj.data.attributes:
-                target_data = final_obj.data.attributes[attr_name].data
-            elif hasattr(final_obj.data, "geometry") and attr_name in final_obj.data.geometry.attributes:
-                target_data = final_obj.data.geometry.attributes[attr_name].data
-            
-            if target_data:
-                total_pts = len(target_data)
+            if 'radius' in final_obj.data.attributes:
+                total_pts = len(final_obj.data.attributes['radius'].data)
                 defaults = np.full(total_pts, 0.003 * SCALE_FACTOR, dtype=np.float32)
-                target_data.foreach_set('value', defaults)
+                final_obj.data.attributes['radius'].data.foreach_set('value', defaults)
 
         # Set Colors
         if colors is not None:
             try:
                 attr_name = "DiffLocks_Color"
-                # For modern CURVES, we use 'FLOAT_COLOR' on 'POINT' domain
-                if hasattr(final_obj.data, "attributes"):
-                    if attr_name not in final_obj.data.attributes:
-                        attr = final_obj.data.attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
-                    else:
-                        attr = final_obj.data.attributes[attr_name]
-                    attr_data = attr.data
-                elif hasattr(final_obj.data, "geometry") and hasattr(final_obj.data.geometry, "attributes"):
-                    if attr_name not in final_obj.data.geometry.attributes:
-                        attr = final_obj.data.geometry.attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
-                    else:
-                        attr = final_obj.data.geometry.attributes[attr_name]
-                    attr_data = attr.data
+                if attr_name not in final_obj.data.attributes:
+                    attr = final_obj.data.attributes.new(name=attr_name, type='FLOAT_COLOR', domain='POINT')
+                else:
+                    attr = final_obj.data.attributes[attr_name]
                 
+                # Prepare color data (handle per-strand or per-point)
                 c_flat = colors.reshape(-1, 3)
-                rgba = np.ones((len(c_flat), 4), dtype=np.float32)
-                rgba[:, :3] = c_flat
-                attr_data.foreach_set('color', rgba.ravel())
-                print("🎨 Color attributes applied.")
+                num_colors = len(c_flat)
+                total_pts = len(attr.data)
+                
+                if num_colors == num_strands and num_colors != total_pts:
+                    # Per-strand colors: repeat for each point
+                    print(f"ℹ️ Broadcasting {num_colors} strand colors to {total_pts} points...")
+                    c_full = np.repeat(c_flat, pts_per_strand, axis=0)
+                elif num_colors == total_pts:
+                    c_full = c_flat
+                else:
+                    print(f"⚠️ Color count mismatch: {num_colors} colors for {total_pts} points. Skipping.")
+                    c_full = None
+                
+                if c_full is not None:
+                    rgba = np.ones((len(c_full), 4), dtype=np.float32)
+                    rgba[:, :3] = c_full
+                    attr.data.foreach_set('color', rgba.ravel())
+                    print("🎨 Color attributes applied.")
+                    del rgba
+                    if 'c_full' in locals(): del c_full
+                    import gc
+                    gc.collect()
             except Exception as e:
                 print(f"⚠️ Could not apply colors: {e}")
-    else:
-        # Legacy radius (Bevel depth)
+
+    except Exception as e:
+        print(f"\n⚠️ Modern conversion failed: {e}. Keeping as legacy curve.")
         final_obj.data.bevel_depth = 0.003 * SCALE_FACTOR
         final_obj.data.bevel_resolution = 0
         final_obj.data.fill_mode = 'FULL'
-        # Legacy vertex colors are hard to apply to Splines without a mesh conversion
-        print("ℹ️ Legacy mode: Skipping per-vertex colors.")
 
     # MATERIAL
-    mat = create_hair_principled_material()
+    mat = create_hair_principled_material(colors=colors)
     if final_obj.data.materials:
         final_obj.data.materials[0] = mat
     else:
         final_obj.data.materials.append(mat)
+    
+    # Ahora sí podemos borrar los colores originales
+    if 'colors' in locals(): del colors
+    if 'radii' in locals(): del radii
+    import gc
+    gc.collect()
 
     # Force dependency graph update
     dg = bpy.context.evaluated_depsgraph_get()
     dg.update()
     
+    # Final cleanup before exports
+    purge_orphans()
+    
     # EXPORT REMAINING FORMATS
     created_any = False
+    
+    # Ensure active and selected for exports
+    bpy.ops.object.select_all(action='DESELECT')
+    final_obj.select_set(True)
+    bpy.context.view_layer.objects.active = final_obj
     
     if 'blend' in requested_formats:
         out = f"{output_base}.blend"
@@ -263,26 +288,15 @@ try:
             if os.path.exists(out) and os.path.getsize(out) > 1024:
                 print(f"✅ Exported: {out} ({os.path.getsize(out)/1024/1024:.1f} MB)")
                 created_any = True
-            else:
-                print(f"❌ Failed to create valid .blend file: {out}")
+            purge_orphans()
         except Exception as e:
             print(f"❌ Blender .blend export error: {e}")
     
-    if 'abc' in requested_formats:
-        out = f"{output_base}.abc"
-        # Selection for ABC
-        final_obj.select_set(True)
-        bpy.context.view_layer.objects.active = final_obj
-        try:
-            bpy.ops.wm.alembic_export(filepath=out, selected=True, visible_objects_only=False, flatten=True)
-            if os.path.exists(out) and os.path.getsize(out) > 1024:
-                print(f"✅ Exported: {out} ({os.path.getsize(out)/1024/1024:.1f} MB)")
-                created_any = True
-            else:
-                print(f"❌ ABC Export failed or zero size: {out}")
-        except Exception as e:
-            print(f"❌ Blender ABC export error: {e}")
-
+    if 'abc' in requested_formats and not any(f.endswith('.abc') for f in [output_base]):
+        # Si por alguna razón no se creó arriba, podríamos intentar aquí, 
+        # pero la lógica principal ahora está antes de la conversión.
+        pass
+    
     if 'usd' in requested_formats:
         out = f"{output_base}.usd"
         try:
@@ -295,15 +309,15 @@ try:
             if os.path.exists(out) and os.path.getsize(out) > 1024:
                 print(f"✅ Exported: {out} ({os.path.getsize(out)/1024/1024:.1f} MB)")
                 created_any = True
-            else:
-                print(f"❌ USD Export failed or zero size: {out}")
+            purge_orphans()
         except Exception as e:
             print(f"❌ Blender USD export error: {e}")
             
     if not created_any:
-        print("⚠️ No Blender files were created. This usually happens if Blender crashes or out of memory.")
+        print("⚠️ No Blender files were created.")
         
     print(f"✅ SUCCESS (Total time: {time.time() - t_start:.2f}s)")
+
 
 except Exception as e:
     traceback.print_exc()
