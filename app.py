@@ -1471,20 +1471,20 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
             # PROGRESS SECTION
             status_html = gr.HTML(value=create_dual_progress_html(0, 0, "Ready to start", 0, 0))
             
-    # --- 8.4. RESULTS ---
-    with gr.Group(visible=False, elem_classes="result-group-container") as result_group:
-        # Optimized layout: Tabs for 3D and 2D previews (3D first by default)
-        with gr.Tabs() as preview_tabs:
-            with gr.Tab("🎨 Interactive 3D (Optimized Preview)", id="tab_3d"):
-                gr.Markdown("<small>✨ <b>Optimized Preview:</b> This is a simplified version for real-time interaction. For full quality and complete hair density, please download the export formats below.</small>")
-                plot_3d = gr.Plot(label="Interactive 3D")
-            
-            with gr.Tab("🖼️ 2D Preview", id="tab_2d"):
-                preview_2d = gr.HTML(render_image_html(None))
-        
-    with gr.Group(visible=False, elem_classes="download-group-container") as download_group:
-        gr.Markdown("### 📥 Download Results")
-        download_file = gr.File(label="Generated Assets", file_count="multiple")
+            # --- 8.4. RESULTS ---
+            with gr.Group(visible=False, elem_classes="result-group-container") as result_group:
+                # Optimized layout: Tabs for 3D and 2D previews (3D first by default)
+                with gr.Tabs() as preview_tabs:
+                    with gr.Tab("🎨 Interactive 3D (Optimized Preview)", id="tab_3d"):
+                        gr.Markdown("<small>✨ <b>Optimized Preview:</b> This is a simplified version for real-time interaction. For full quality and complete hair density, please download the export formats below.</small>")
+                        plot_3d = gr.Plot(label="Interactive 3D")
+                    
+                    with gr.Tab("🖼️ 2D Preview", id="tab_2d"):
+                        preview_2d = gr.HTML(render_image_html(None))
+                
+            with gr.Group(visible=False, elem_classes="download-group-container") as download_group:
+                gr.Markdown("### 📥 Download Results")
+                download_file = gr.File(label="Generated Assets", file_count="multiple")
 
             with gr.Accordion("📜 Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))
