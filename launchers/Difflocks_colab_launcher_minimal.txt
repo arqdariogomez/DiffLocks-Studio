@@ -130,9 +130,6 @@ def run_cmd_stream(cmd, desc="", cwd=None, progress_val=None):
 
 def clean_environment():
     """Deep cleanup to maximize disk space in Colab"""
-    if os.path.exists(MARKER_FILE):
-        return False
-    
     render_status(10, "Optimizing disk space and environment...", "warning")
     
     # 1. Remove Colab sample data (frees ~100MB)
@@ -142,15 +139,20 @@ def clean_environment():
     # 2. Clean apt cache
     subprocess.run("apt-get clean && rm -rf /var/lib/apt/lists/*", shell=True)
     
-    # 3. Clean only critical binary paths
-    for path in ["/usr/local/lib/python3.10/dist-packages/numpy"]:
-        if os.path.exists(path): shutil.rmtree(path, ignore_errors=True)
-    
-    # 4. Clear HF cache if it exists from previous failed runs
+    # 3. Clean HF cache aggressively (this is usually where space disappears)
     hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
     if hf_cache.exists():
+        log("Cleaning Hugging Face cache to free up space...", "info")
         shutil.rmtree(hf_cache, ignore_errors=True)
     
+    # 4. Check disk space and log it
+    import shutil as sh
+    total, used, free = sh.disk_usage("/")
+    log(f"Disk Space: {free // (2**30)}GB free / {total // (2**30)}GB total", "info")
+    
+    if free // (2**30) < 15:
+        log("⚠️ Low disk space detected! If download fails, please use Google Drive or reset runtime.", "warn")
+
     # Mark as ready
     with open(MARKER_FILE, "w") as f: f.write("ready")
     return True
@@ -191,20 +193,19 @@ def install_blender():
 
 def setup_drive():
     """Configures Google Drive persistence robustly"""
-    if os.path.exists("/content/drive/MyDrive"):
-        log("Google Drive is already mounted.", "success")
-        os.makedirs(DRIVE_PATH, exist_ok=True)
-        target_cp = os.path.join(DRIVE_PATH, "checkpoints")
-        os.makedirs(target_cp, exist_ok=True)
-        return target_cp
-
     try:
         from google.colab import drive
         render_status(20, "Requesting Google Drive access...", "warning")
-        log("Check the Google Drive popup (or use the folder icon on the left).", "info")
-        drive.mount('/content/drive')
+        
+        # We always call drive.mount to ensure the user gets the popup 
+        # to choose an account if they want to.
+        log("Requesting Google Drive permission (you can choose a different account)...", "info")
+        
+        # force_remount=True ensures the popup appears even if already mounted
+        drive.mount('/content/drive', force_remount=True)
         
         if os.path.exists("/content/drive/MyDrive"):
+            log("Google Drive mounted successfully.", "success")
             os.makedirs(DRIVE_PATH, exist_ok=True)
             target_cp = os.path.join(DRIVE_PATH, "checkpoints")
             os.makedirs(target_cp, exist_ok=True)
@@ -212,7 +213,7 @@ def setup_drive():
     except Exception as e:
         error_msg = str(e)
         if "credential propagation" in error_msg:
-            log("⚠️ Credential error. Try mounting manually from the folder icon.", "warn")
+            log("⚠️ Credential error. Try mounting manually from the folder icon on the left sidebar.", "warn")
         else:
             log(f"Could not mount Google Drive ({error_msg}).", "warn")
         
@@ -376,22 +377,35 @@ try:
     
     # 3. Checkpoints Persistence
     local_cp = os.path.join(REPO_DIR, "checkpoints")
+    
+    # Clean up broken or existing symlinks first to avoid [Errno 17]
+    if os.path.islink(local_cp):
+        log("Cleaning up existing checkpoints link...", "info")
+        os.unlink(local_cp)
+
     if cp_drive:
-        # If local exists and is not a link, we need to merge or move
-        if os.path.exists(local_cp) and not os.path.islink(local_cp):
-            # Move existing files to drive if drive is empty
-            if not any(Path(cp_drive).iterdir()):
-                log("Moving local checkpoints to Drive...", "info")
-                for item in os.listdir(local_cp):
-                    shutil.move(os.path.join(local_cp, item), os.path.join(cp_drive, item))
+        # If local exists and is not a link, we need to move it
+        if os.path.exists(local_cp):
+            try:
+                if not any(Path(cp_drive).iterdir()):
+                    log("Moving local checkpoints to Drive...", "info")
+                    for item in os.listdir(local_cp):
+                        shutil.move(os.path.join(local_cp, item), os.path.join(cp_drive, item))
+            except: pass
             shutil.rmtree(local_cp)
         
-        if not os.path.exists(local_cp):
-            os.makedirs(os.path.dirname(local_cp), exist_ok=True)
-            os.symlink(cp_drive, local_cp)
-            log("Checkpoints persistence enabled (Linked to Drive).", "success")
+        # Now create the link
+        os.makedirs(os.path.dirname(local_cp), exist_ok=True)
+        os.symlink(cp_drive, local_cp)
+        log("Checkpoints persistence enabled (Linked to Drive).", "success")
     else:
         log("Temporary storage enabled for checkpoints.", "info")
+        # CRITICAL: If we are using temporary storage, clear existing checkpoints 
+        # to avoid "Not enough free disk space" errors from previous failed attempts
+        if os.path.exists(local_cp):
+            log("Cleaning up previous temporary checkpoints to free space...", "info")
+            if os.path.isdir(local_cp): shutil.rmtree(local_cp)
+            else: os.remove(local_cp)
         os.makedirs(local_cp, exist_ok=True)
 
     # 4. Installation & Patches

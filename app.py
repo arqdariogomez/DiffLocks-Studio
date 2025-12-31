@@ -93,12 +93,12 @@ DIFFUSION_TIME = 180 if HAS_NATTEN else 450 # 3 min vs 7.5 min (4.5s/it)
 DECODING_TIME = 120 # GPU decoding is fast
 
 PHASES = [
-    ("init", "🚀 Initializing", 5, 0.00, 0.01),
-    ("1/5", "👤 Detecting Face", 10, 0.01, 0.03),
+    ("init", "🚀 Starting Studio", 5, 0.00, 0.01),
+    ("1/5", "👤 Face Detection", 10, 0.01, 0.03),
     ("2/5", "🦖 Extracting Features", 20, 0.03, 0.08),
     ("3/5", "🌫️ Synthesizing hair (AI)", DIFFUSION_TIME, 0.08, 0.55),
     ("4/5", "🧬 Constructing geometry (3D)", DECODING_TIME, 0.55, 0.75),
-    ("5/5", "💾 Exporting assets", 5, 0.75, 0.78),
+    ("5/5", "💾 Post-processing", 5, 0.75, 0.78),
     ("preview_2d", "🎨 Creating 2D preview", 10, 0.78, 0.82),
     ("preview_3d", "🎨 Creating Interactive 3D", 15, 0.82, 0.88),
     ("obj_export", "📦 Exporting OBJ", 30, 0.88, 0.94),
@@ -769,7 +769,10 @@ def generate_preview_3d(npz_path, log_capture=None):
         fig = go.Figure(data=traces)
         fig.update_layout(
             template="plotly_dark",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
             scene=dict(
+                bgcolor='rgba(0,0,0,0)',
                 xaxis=dict(visible=False, showgrid=False, showbackground=False),
                 yaxis=dict(visible=False, showgrid=False, showbackground=False),
                 zaxis=dict(visible=False, showgrid=False, showbackground=False),
@@ -777,6 +780,7 @@ def generate_preview_3d(npz_path, log_capture=None):
             ),
             margin=dict(l=0, r=0, b=0, t=0),
             height=550,
+            autosize=True,
             showlegend=False
         )
         return fig
@@ -800,31 +804,40 @@ def create_empty_3d_plot(message="🎨 Interactive 3D preview will appear here a
         except:
             return None
     
-    # Create a figure with a dummy invisible trace to ensure it's valid
-    fig = go.Figure(data=[go.Scatter3d(x=[0], y=[0], z=[0], mode='markers', marker=dict(size=0, opacity=0), showlegend=False)])
-    
-    fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor='#18181b',
-        plot_bgcolor='#18181b',
-        scene=dict(
-            bgcolor='#18181b',
-            xaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
-            yaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
-            zaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
-        ),
-        margin=dict(l=0, r=0, b=0, t=0),
-        height=550,
-        autosize=True,
-        annotations=[dict(
-            text=message,
-            xref="paper", yref="paper",
-            x=0.5, y=0.5,
-            showarrow=False,
-            font=dict(size=16, color="#a1a1aa")
-        )]
-    )
-    return fig
+    try:
+        # Use a more robust empty plot with a invisible trace to avoid graph icon
+        fig = go.Figure(data=[go.Scatter3d(
+            x=[0], y=[0], z=[0], 
+            mode='markers', 
+            marker=dict(size=0.1, color='rgba(0,0,0,0)'),
+            showlegend=False,
+            hoverinfo='none'
+        )])
+        
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            scene=dict(
+                bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
+                yaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
+                zaxis=dict(visible=False, showgrid=False, showbackground=False, zeroline=False),
+            ),
+            margin=dict(l=0, r=0, b=0, t=0),
+            height=550,
+            autosize=True,
+            annotations=[dict(
+                text=message,
+                xref="paper", yref="paper",
+                x=0.5, y=0.5,
+                showarrow=False,
+                font=dict(size=16, color="#a1a1aa")
+            )]
+        )
+        return fig
+    except Exception as e:
+        return None
 
 def export_obj(npz_path, obj_path, log_capture=None):
     try:
@@ -895,8 +908,16 @@ def export_blender(npz_path, job_dir, formats, log_capture):
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
         stdout, stderr = process.communicate(timeout=1800) # 30 min timeout
         if stdout:
-            for line in stdout.strip().split('\n')[-10:]:
-                if line.strip(): log_capture.add_log(f"[Blender] {line.strip()}")
+            # Check for success in the entire output
+            if "✅ SUCCESS" in stdout:
+                log_capture.add_log("✅ Blender process completed successfully")
+            
+            # Log more lines to see what happened
+            lines = stdout.strip().split('\n')
+            for line in lines[-50:]: # Show more lines
+                line = line.strip()
+                if line: log_capture.add_log(f"[Blender] {line}")
+        
         if stderr:
             for line in stderr.strip().split('\n'):
                 line = line.strip()
@@ -958,7 +979,7 @@ def run_inference_logic(image, cfg_scale, export_formats):
             status_html: create_dual_progress_html(*tracker.get_progress()), 
             debug_console: render_debug_console(log_capture.get_logs()), 
             generate_btn: gr.update(interactive=False),
-            plot_3d: None,
+            plot_3d: gr.update(value=create_empty_3d_plot(), visible=True),
             preview_2d: render_image_html(None),
             download_file: [],
             result_group: gr.update(visible=False),
@@ -990,11 +1011,20 @@ def run_inference_logic(image, cfg_scale, export_formats):
                     log_capture.add_log(val)
                 elif dtype == "error":
                     raise Exception(val)
+                elif dtype == "result":
+                    # When we have result, we are entering the post-diffusion stage
+                    # The 2D results are actually already visible in the neural texture
+                    pass
             
-            # Yield every single update to ensure real-time log/progress
+            # Show result group as soon as diffusion (phase 3/5) is halfway or done
+            # so the user can see the progress of the interactive 3D
+            current_phase_id = tracker.phases[tracker.current_phase_index][0]
+            show_results = "3/5" in current_phase_id or "4/5" in current_phase_id or "5/5" in current_phase_id or tracker.current_phase_index > 4
+            
             yield {
                 status_html: create_dual_progress_html(*tracker.get_progress()),
-                debug_console: render_debug_console(log_capture.get_logs())
+                debug_console: render_debug_console(log_capture.get_logs()),
+                result_group: gr.update(visible=show_results)
             }
 
         npz_path = job_dir / "difflocks_output_strands.npz"
@@ -1004,7 +1034,8 @@ def run_inference_logic(image, cfg_scale, export_formats):
         tracker.set_phase("preview_2d")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs())
+            debug_console: render_debug_console(log_capture.get_logs()),
+            result_group: gr.update(visible=True) # SHOW RESULT GROUP NOW
         }
         preview_img_path = generate_preview_2d(npz_path, job_dir, log_capture)
         preview_2d_html = render_image_html(preview_img_path)
@@ -1012,7 +1043,8 @@ def run_inference_logic(image, cfg_scale, export_formats):
         tracker.set_phase("preview_3d")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs())
+            debug_console: render_debug_console(log_capture.get_logs()),
+            preview_2d: preview_2d_html
         }
         
         # Use optimized preview if available
@@ -1024,21 +1056,23 @@ def run_inference_logic(image, cfg_scale, export_formats):
             
         plot_3d_fig = generate_preview_3d(preview_npz if preview_npz.exists() else npz_path, log_capture)
         
-        # 3D plot is ready, but we keep everything hidden until the very end 
-        # as requested by the user to avoid "ghost" elements or empty containers.
+        # 3D plot is ready
         initial_downloads = [str(f) for f in [npz_path] if f.exists()]
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()),
             preview_2d: preview_2d_html,
             plot_3d: plot_3d_fig if plot_3d_fig else gr.update(value=create_empty_3d_plot("⚠️ Could not render 3D")),
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: initial_downloads
+            download_file: initial_downloads,
+            result_group: gr.update(visible=True),
+            download_group: gr.update(visible=False) # Keep hidden until the very end
         }
         
         tracker.set_phase("obj_export")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs())
+            debug_console: render_debug_console(log_capture.get_logs()),
+            result_group: gr.update(visible=True)
         }
         obj_path = job_dir / "hair.obj"
         if export_obj(npz_path, obj_path, log_capture):
@@ -1046,20 +1080,23 @@ def run_inference_logic(image, cfg_scale, export_formats):
             
         yield { 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: initial_downloads
+            download_file: initial_downloads,
+            result_group: gr.update(visible=True)
         }
         
         tracker.set_phase("blender")
         yield { 
             status_html: create_dual_progress_html(*tracker.get_progress()), 
-            debug_console: render_debug_console(log_capture.get_logs())
+            debug_console: render_debug_console(log_capture.get_logs()),
+            result_group: gr.update(visible=True)
         }
         blender_outputs = export_blender(npz_path, job_dir, export_formats, log_capture)
         final_downloads = initial_downloads + [str(p) for p in blender_outputs if p and Path(p).exists()]
         
         yield { 
             debug_console: render_debug_console(log_capture.get_logs()),
-            download_file: final_downloads
+            download_file: final_downloads,
+            result_group: gr.update(visible=True)
         }
         
         # 12. Final completion
@@ -1081,9 +1118,15 @@ def run_inference_logic(image, cfg_scale, export_formats):
             status_html: final_status,
             result_group: gr.update(visible=True),
             download_file: final_downloads,
-            download_group: gr.update(visible=True), 
+            download_group: gr.update(visible=True), # SHOW AT THE VERY END
             debug_console: render_debug_console(log_capture.get_logs()),
             generate_btn: gr.update(interactive=True)
+        }
+        
+        # Double check visibility via JavaScript for safety
+        yield {
+            result_group: gr.update(visible=True),
+            download_group: gr.update(visible=True)
         }
         
     except Exception as e:
@@ -1116,6 +1159,39 @@ CSS = """
     background: #3f3f46 !important;
     color: #fafafa !important;
     max-height: 32px !important;
+}
+
+/* === VISIBILITY FIXES === */
+.result-group-container, 
+.download-group-container {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 50px !important;
+    margin-bottom: 20px !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+/* Ensure children also expand and are visible */
+div.result-group-container > div, 
+div.download-group-container > div {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex-grow: 1 !important;
+    min-height: 450px !important;
+}
+
+/* Specific fix for Plotly container inside result group */
+.result-group-container .gr-plot,
+.result-group-container .plotly-graph-div {
+    min-height: 550px !important;
+    height: 550px !important;
+}
+
+/* Force download group contents to be visible */
+.download-group-container .gr-file {
+    min-height: 150px !important;
 }
 
 /* === CHECKBOX TEXT FIX === */
@@ -1170,6 +1246,14 @@ footer { display: none !important; }
     opacity: 1 !important;
 }
 
+/* Fix for Plotly "Graph Icon" instead of plot */
+.modebar {
+    display: none !important;
+}
+.main-svg {
+    background: transparent !important;
+}
+
 /* Fix for Colab/IFrame ghost text in gr.File and layout collapse */
 .gr-file { 
     color: #ffffff !important; 
@@ -1220,13 +1304,21 @@ div.download-group-container:not([style*="display:none"]):not([style*="display: 
     visibility: visible !important;
 }
 
-/* Ensure children also expand */
+/* Ensure children also expand and are visible */
 div.result-group-container > div, 
 div.download-group-container > div {
     width: 100% !important;
     display: flex !important;
     flex-direction: column !important;
     flex-grow: 1 !important;
+    min-height: 450px !important;
+}
+
+/* Specific fix for Plotly container inside result group */
+.result-group-container .gr-plot,
+.result-group-container .plotly-graph-div {
+    min-height: 550px !important;
+    height: 550px !important;
 }
 """
 

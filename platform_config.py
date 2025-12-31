@@ -34,8 +34,12 @@ class Config:
             if not data_checkpoints.exists():
                 data_checkpoints.mkdir(parents=True, exist_ok=True)
             
+            # Remove any existing symlink (broken or not) to avoid FileExistsError
+            if local_checkpoints.is_symlink():
+                local_checkpoints.unlink()
+            
             # If local exists and is NOT a link, move contents to data_dir then delete local
-            if local_checkpoints.exists() and not local_checkpoints.is_symlink():
+            if local_checkpoints.exists():
                 import shutil
                 print(f"🔄 Moving existing checkpoints to persistent storage: {data_checkpoints}")
                 for item in local_checkpoints.iterdir():
@@ -78,7 +82,7 @@ class Config:
             needs_share = True
             # Colab often uses Drive for persistence
             if Path("/content/drive/MyDrive").exists():
-                data_dir = Path("/content/drive/MyDrive/DiffLocks_Data")
+                data_dir = Path("/content/drive/MyDrive/DiffLocks")
         elif Path("/kaggle").exists():
             platform = 'kaggle'
             work_dir = Path("/kaggle/working")
