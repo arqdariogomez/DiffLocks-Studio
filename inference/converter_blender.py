@@ -153,17 +153,26 @@ try:
                 obj.data.bevel_resolution = 0
                 obj.data.fill_mode = 'FULL'
             
-            bpy.ops.wm.alembic_export(
-                filepath=out_abc,
-                selected=True,
-                flatten=True,
-                as_background_job=False,
-                export_hair=True,
-                export_particles=True
-            )
+            # Use temp_override for export to be safe
+            ctx = {
+                "selected_objects": legacy_objs,
+                "selected_editable_objects": legacy_objs
+            }
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.wm.alembic_export(
+                    filepath=out_abc,
+                    selected=True,
+                    flatten=True,
+                    as_background_job=False,
+                    export_hair=True,
+                    export_particles=True
+                )
+            
             if os.path.exists(out_abc) and os.path.getsize(out_abc) > 1000:
                 print(f"✅ Exported ABC: {out_abc} ({os.path.getsize(out_abc)/1024/1024:.1f} MB)")
                 created_any = True
+            else:
+                print(f"⚠️ ABC export produced no file or empty file: {out_abc}")
         except Exception as e:
             print(f"❌ ABC export error: {e}")
 
@@ -179,13 +188,23 @@ try:
         bpy.context.view_layer.objects.active = obj
         
         try:
-            # Try to convert to modern CURVES
-            bpy.ops.object.convert(target='CURVES')
-            new_obj = bpy.context.active_object
-            if new_obj and new_obj.type == 'CURVES':
-                modern_objs.append(new_obj)
-            else:
-                modern_objs.append(obj)
+            # Use temp_override for conversion too
+            ctx = {
+                "active_object": obj,
+                "selected_objects": [obj],
+                "selected_editable_objects": [obj]
+            }
+            with bpy.context.temp_override(**ctx):
+                if bpy.ops.object.convert.poll():
+                    bpy.ops.object.convert(target='CURVES')
+                    new_obj = bpy.context.active_object
+                    if new_obj and new_obj.type == 'CURVES':
+                        modern_objs.append(new_obj)
+                    else:
+                        modern_objs.append(obj)
+                else:
+                    print(f"⚠️ Convert poll failed for {obj.name}, using as is")
+                    modern_objs.append(obj)
         except Exception as e:
             print(f"⚠️ Conversion failed for {obj.name}: {e}")
             modern_objs.append(obj)
@@ -213,21 +232,20 @@ try:
                 
                 print(f"🔗 Joining {len(o_list)} objects of type {t}...")
                 try:
-                    # In Blender 4.x, sometimes we need to override context for headless join
-                    # but usually setting active object and selection is enough if done correctly.
-                    # We use a context override dictionary if needed, but let's try direct first with better validation.
-                    if bpy.ops.object.join.poll():
-                        bpy.ops.object.join()
-                        final_main_obj = bpy.context.active_object
-                    else:
-                        print(f"⚠️ Join poll failed for type {t}, trying manual override")
-                        # Manual context override for join
-                        ctx = bpy.context.copy()
-                        ctx['active_object'] = active_obj
-                        ctx['selected_objects'] = o_list
-                        ctx['selected_editable_objects'] = o_list
-                        bpy.ops.object.join(ctx)
-                        final_main_obj = bpy.context.active_object
+                    # Use temp_override for Blender 4.x+ headless reliability
+                    ctx = {
+                        "active_object": active_obj,
+                        "selected_objects": o_list,
+                        "selected_editable_objects": o_list
+                    }
+                    with bpy.context.temp_override(**ctx):
+                        if bpy.ops.object.join.poll():
+                            bpy.ops.object.join()
+                            final_main_obj = bpy.context.active_object
+                            print(f"✅ Join successful for type {t}")
+                        else:
+                            print(f"⚠️ Join poll failed for type {t}")
+                            final_main_obj = o_list[0]
                 except Exception as e:
                     print(f"⚠️ Join failed for type {t}: {e}")
                     final_main_obj = o_list[0]
@@ -291,14 +309,26 @@ try:
         
     if 'usd' in requested_formats:
         out_usd = f"{output_base}.usd"
-        bpy.ops.wm.usd_export(filepath=out_usd, selected_objects_only=True)
-        print(f"✅ Exported USD: {out_usd}")
-        created_any = True
+        try:
+            ctx = {
+                "selected_objects": [final_obj],
+                "selected_editable_objects": [final_obj]
+            }
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.wm.usd_export(filepath=out_usd, selected_objects_only=True)
+            
+            if os.path.exists(out_usd):
+                print(f"✅ Exported USD: {out_usd}")
+                created_any = True
+            else:
+                print(f"⚠️ USD export produced no file: {out_usd}")
+        except Exception as e:
+            print(f"❌ USD export error: {e}")
 
     if created_any:
-        print("✅ SUCCESS")
+        print("✅ SUCCESS: Blender export process finished")
     else:
-        print("⚠️ No files created")
+        print("⚠️ No Blender files were created")
 
 except Exception as e:
     print(f"❌ ERROR: {e}")

@@ -233,8 +233,12 @@ class ProgressTracker:
             
         phase_remaining = max(phase_duration - phase_elapsed, 0)
         
+        # Special case for Diffusion (3/5) to match step-by-step log
+        display_phase_name = phase_name
+        if phase_id == "3/5" and getattr(self, 'manual_phase_progress', None) is not None:
+            display_phase_name = f"Diffusion: {int(phase_internal_progress)}%"
+
         # Calculate total progress using the percentage ranges defined in PHASES
-        # Total progress = start_pct + (end_pct - start_pct) * (internal_progress / 100)
         total_progress = (phase_start_pct + (phase_end_pct - phase_start_pct) * (phase_internal_progress / 100)) * 100
         total_progress = min(max(total_progress, 0), 99) # Cap at 99% until fully complete
         
@@ -242,7 +246,7 @@ class ProgressTracker:
         remaining_phases_time = sum(self.phases[i][2] for i in range(self.current_phase_index + 1, len(self.phases)))
         total_remaining = phase_remaining + remaining_phases_time
         
-        return total_progress, total_remaining, phase_name, phase_internal_progress, phase_remaining
+        return total_progress, total_remaining, display_phase_name, phase_internal_progress, phase_remaining
 
 # --- 4. HTML RENDERING FUNCTIONS ---
 
@@ -372,14 +376,9 @@ def create_complete_html():
             </div>
         </div>
         <script>
-            // Force layout recalculation for Gradio components
+            // Simple resize trigger for Plotly
             setTimeout(() => {{
                 window.dispatchEvent(new Event('resize'));
-                const resultGroup = document.querySelector('.result-group-container');
-                const downloadGroup = document.querySelector('.download-group-container');
-                if (resultGroup) {{ resultGroup.style.display = 'flex'; resultGroup.style.opacity = '1'; }}
-                if (downloadGroup) {{ downloadGroup.style.display = 'flex'; downloadGroup.style.opacity = '1'; }}
-                console.log("✨ Layout forced via JS");
             }}, 500);
         </script>
     </div>
@@ -1016,15 +1015,18 @@ def run_inference_logic(image, cfg_scale, export_formats):
                     # The 2D results are actually already visible in the neural texture
                     pass
             
-            # Show result group as soon as diffusion (phase 3/5) is halfway or done
-            # so the user can see the progress of the interactive 3D
+            # Show result group as soon as diffusion (phase 3/5) is finished
             current_phase_id = tracker.phases[tracker.current_phase_index][0]
-            show_results = "3/5" in current_phase_id or "4/5" in current_phase_id or "5/5" in current_phase_id or tracker.current_phase_index > 4
+            # ONLY show result group AFTER diffusion is finished (entering 4/5 or later)
+            # OR if we are in the very final stretch of 3/5 (98%+)
+            show_results = "4/5" in current_phase_id or "5/5" in current_phase_id or tracker.current_phase_index > 4 or \
+                          ("3/5" in current_phase_id and getattr(tracker, 'manual_phase_progress', 0) > 0.98)
             
             yield {
                 status_html: create_dual_progress_html(*tracker.get_progress()),
                 debug_console: render_debug_console(log_capture.get_logs()),
-                result_group: gr.update(visible=show_results)
+                result_group: gr.update(visible=show_results),
+                download_group: gr.update(visible=False) # STRICTLY HIDDEN
             }
 
         npz_path = job_dir / "difflocks_output_strands.npz"
@@ -1123,12 +1125,6 @@ def run_inference_logic(image, cfg_scale, export_formats):
             generate_btn: gr.update(interactive=True)
         }
         
-        # Double check visibility via JavaScript for safety
-        yield {
-            result_group: gr.update(visible=True),
-            download_group: gr.update(visible=True)
-        }
-        
     except Exception as e:
         log_capture.add_log(f"❌ Error: {str(e)}")
         yield { status_html: create_error_html(str(e)), debug_console: render_debug_console(log_capture.get_logs()), generate_btn: gr.update(interactive=True) }
@@ -1162,19 +1158,24 @@ CSS = """
 }
 
 /* === VISIBILITY FIXES === */
-.result-group-container, 
-.download-group-container {
+/*
+   Robust Visibility Fix:
+   We want these containers to be flex ONLY when Gradio explicitly sets them to visible.
+   Gradio uses 'display: block' for visible elements.
+*/
+div.result-group-container[style*="display: block"],
+div.download-group-container[style*="display: block"] {
     display: flex !important;
     flex-direction: column !important;
-    min-height: 50px !important;
-    margin-bottom: 20px !important;
     opacity: 1 !important;
     visibility: visible !important;
+    min-height: 50px !important;
+    margin-bottom: 20px !important;
 }
 
-/* Ensure children also expand and are visible */
-div.result-group-container > div, 
-div.download-group-container > div {
+/* Ensure children expand when parent is visible */
+div.result-group-container[style*="display: block"] > div, 
+div.download-group-container[style*="display: block"] > div {
     width: 100% !important;
     display: flex !important;
     flex-direction: column !important;
@@ -1282,45 +1283,8 @@ footer { display: none !important; }
     display: block !important;
 }
 
-/* 
-   Robust Visibility Fix:
-   We want these containers to be flex when Gradio makes them visible.
-   Gradio usually sets 'display: block' or removes 'display: none'.
-*/
-.result-group-container, 
-.download-group-container {
-    min-height: 450px !important;
-}
-
-/* 
-   Apply flex only if the element is NOT explicitly hidden by Gradio.
-   We use a high-specificity selector to ensure our flex doesn't break hidden state.
-*/
-div.result-group-container:not([style*="display:none"]):not([style*="display: none"]),
-div.download-group-container:not([style*="display:none"]):not([style*="display: none"]) {
-    display: flex !important;
-    flex-direction: column !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-}
-
-/* Ensure children also expand and are visible */
-div.result-group-container > div, 
-div.download-group-container > div {
-    width: 100% !important;
-    display: flex !important;
-    flex-direction: column !important;
-    flex-grow: 1 !important;
-    min-height: 450px !important;
-}
-
-/* Specific fix for Plotly container inside result group */
-.result-group-container .gr-plot,
-.result-group-container .plotly-graph-div {
-    min-height: 550px !important;
-    height: 550px !important;
-}
 """
+
 
 js_func = """
 function() {
@@ -1507,19 +1471,20 @@ with gr.Blocks(theme=dark_theme, css=CSS, title="DiffLocks Studio", js=js_func) 
             # PROGRESS SECTION
             status_html = gr.HTML(value=create_dual_progress_html(0, 0, "Ready to start", 0, 0))
             
-            with gr.Group(visible=False, elem_classes="result-group-container") as result_group:
-                # Optimized layout: Tabs for 3D and 2D previews (3D first by default)
-                with gr.Tabs() as preview_tabs:
-                    with gr.Tab("🎨 Interactive 3D (Optimized Preview)", id="tab_3d"):
-                        gr.Markdown("<small>✨ <b>Optimized Preview:</b> This is a simplified version for real-time interaction. For full quality and complete hair density, please download the export formats below.</small>")
-                        plot_3d = gr.Plot(label="Interactive 3D")
-                    
-                    with gr.Tab("🖼️ 2D Preview", id="tab_2d"):
-                        preview_2d = gr.HTML(render_image_html(None))
-                
-            with gr.Group(visible=False, elem_classes="download-group-container") as download_group:
-                gr.Markdown("### 📥 Download Results")
-                download_file = gr.File(label="Generated Assets", file_count="multiple")
+    # --- 8.4. RESULTS ---
+    with gr.Group(visible=False, elem_classes="result-group-container") as result_group:
+        # Optimized layout: Tabs for 3D and 2D previews (3D first by default)
+        with gr.Tabs() as preview_tabs:
+            with gr.Tab("🎨 Interactive 3D (Optimized Preview)", id="tab_3d"):
+                gr.Markdown("<small>✨ <b>Optimized Preview:</b> This is a simplified version for real-time interaction. For full quality and complete hair density, please download the export formats below.</small>")
+                plot_3d = gr.Plot(label="Interactive 3D")
+            
+            with gr.Tab("🖼️ 2D Preview", id="tab_2d"):
+                preview_2d = gr.HTML(render_image_html(None))
+        
+    with gr.Group(visible=False, elem_classes="download-group-container") as download_group:
+        gr.Markdown("### 📥 Download Results")
+        download_file = gr.File(label="Generated Assets", file_count="multiple")
 
             with gr.Accordion("📜 Debug Console", open=True):
                 debug_console = gr.HTML(value=render_debug_console([]))
